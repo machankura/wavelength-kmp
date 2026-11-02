@@ -1,0 +1,7 @@
+# Kotlin/Native bindings for the gomobile Wavewalletdk.xcframework. The
+# framework search path (-F<slice>) is added per target in build.gradle.kts.
+language = Objective-C
+modules = Wavewalletdk
+package = engineering.lightning.wavewalletdk.cinterop
+# The Go runtime's resolver links against libresolv.
+linkerOpts = -lresolv

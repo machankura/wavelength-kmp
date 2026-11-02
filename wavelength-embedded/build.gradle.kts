@@ -1,6 +1,10 @@
+import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
+import org.jetbrains.kotlin.konan.target.HostManager
+
 plugins {
     id("wavelength.kmp-base")
     id("wavelength.publishing")
+    alias(libs.plugins.skie) apply false
 }
 
 description = "Runs the wavelength daemon in-process through its gomobile bindings (Android .aar, iOS .xcframework)."
@@ -38,4 +42,47 @@ kotlin {
 
 // iOS: cinterop over the staged Wavewalletdk.xcframework. Apple cinterop needs
 // Xcode, so the iOS targets exist only on macOS hosts (ADR 0002, 0004).
-apply(from = "ios.gradle.kts")
+if (HostManager.hostIsMac) {
+    apply(plugin = "co.touchlab.skie")
+
+    val xcframework = rootProject.file("bindings/ios/Wavewalletdk.xcframework")
+    val wavelengthKit = XCFramework("WavelengthKit")
+
+    kotlin {
+        listOf(
+            iosArm64() to "ios-arm64",
+            iosSimulatorArm64() to "ios-arm64_x86_64-simulator",
+        ).forEach { (target, slice) ->
+            val sliceDir = xcframework.resolve(slice).absolutePath
+            target.compilations.getByName("main").cinterops.create("wavewalletdk") {
+                definitionFile.set(file("src/nativeInterop/cinterop/wavewalletdk.def"))
+                compilerOpts("-F$sliceDir")
+            }
+            // Test executables link the static Go framework directly; app
+            // builds get it from the app's own Wavewalletdk.xcframework
+            // dependency (ADR 0004).
+            target.binaries.all {
+                linkerOpts("-F$sliceDir", "-framework", "Wavewalletdk", "-lresolv")
+            }
+            target.binaries.framework {
+                baseName = "WavelengthKit"
+                isStatic = true
+                export(projects.wavelengthCore)
+                wavelengthKit.add(this)
+            }
+        }
+
+        sourceSets {
+            iosTest.dependencies {
+                implementation(libs.kotlinx.coroutines.test)
+            }
+        }
+    }
+
+    tasks.withType<org.jetbrains.kotlin.gradle.tasks.CInteropProcess>().configureEach {
+        val framework = xcframework
+        doFirst {
+            check(framework.isDirectory) { "missing ${framework.path}; run scripts/fetch-bindings.sh ios" }
+        }
+    }
+}

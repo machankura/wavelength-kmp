@@ -28,6 +28,16 @@ Embedding the static archive in the klib with `staticLibraries=` would make
 the library usable from Maven alone. The cost is a klib of over 100 MB per
 slice, and Maven Central deployment size limits that are not yet verified.
 
+## Implementation
+
+- `wavelength-embedded/src/nativeInterop/cinterop/wavewalletdk.def` binds the
+  `Wavewalletdk` clang module. `build.gradle.kts` adds `-F<slice>` for each
+  target (`ios-arm64`, `ios-arm64_x86_64-simulator`).
+- iOS targets, cinterop, SKIE, and the `WavelengthKit` XCFramework (static,
+  exports `wavelength-core`) are configured only on macOS hosts.
+- Test executables link `-framework Wavewalletdk -lresolv` themselves; apps
+  link the Go framework through their own dependency on it.
+
 ## Validation (to do on macOS)
 
 1. `./gradlew :wavelength-embedded:iosSimulatorArm64Test` boots the daemon
