@@ -10,4 +10,5 @@ local.properties
 xcuserdata
 .kotlin
 #So we don't accidentally commit our private keys
-*.gpg
+*.gpg# Native wavelength bindings staged by scripts/fetch-bindings.sh (hundreds of MB).
+/bindings/
