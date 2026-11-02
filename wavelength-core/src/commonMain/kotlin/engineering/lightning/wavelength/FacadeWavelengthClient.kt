@@ -306,7 +306,7 @@ public class FacadeWavelengthClient(
         return call(FacadeVerb.LIST, WireListRequest.serializer(), wire, ListResult.serializer())
     }
 
-    override fun activity(options: ActivityOptions): Flow<Entry> = channelFlow {
+    override fun activityEvents(options: ActivityOptions): Flow<ActivityEvent> = channelFlow {
         options.cursor?.let {
             if (it < 0) throw WavelengthException.InvalidCursor("activity cursor must not be negative")
         }
@@ -316,6 +316,7 @@ public class FacadeWavelengthClient(
         )
         val subscription = blocking { bindings.subscribe(request) }
         var closedByCollector = false
+        send(ActivityEvent.Opened)
 
         val pump = launch(dispatcher) {
             try {
@@ -325,7 +326,7 @@ public class FacadeWavelengthClient(
                     } catch (e: Throwable) {
                         throw ErrorClassifier.classify(e)
                     } ?: break
-                    send(decode(Entry.serializer(), next))
+                    send(ActivityEvent.EntryReceived(decode(Entry.serializer(), next)))
                 }
                 // Report only ends the app did not cause: not a cancelled
                 // collector and not a stop() it requested.

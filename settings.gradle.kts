@@ -27,5 +27,6 @@ enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 include(":wavelength-core")
 include(":wavelength-testing")
+include(":wavelength-engine")
 include(":wavelength-embedded")
 include(":wavelength-bindings-android")

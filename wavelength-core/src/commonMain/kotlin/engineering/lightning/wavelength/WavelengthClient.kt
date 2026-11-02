@@ -25,6 +25,8 @@ import engineering.lightning.wavelength.model.WalletState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.map
 
 /**
  * The wavelength wallet: an embedded `waved` daemon driven through typed
@@ -107,7 +109,15 @@ public interface WavelengthClient {
      * a clean end (including [stop]); fails with [WavelengthException] on a
      * stream error. Cancelling collection closes the subscription.
      */
-    public fun activity(options: ActivityOptions = ActivityOptions()): Flow<Entry>
+    public fun activity(options: ActivityOptions = ActivityOptions()): Flow<Entry> =
+        activityEvents(options).filterIsInstance<ActivityEvent.EntryReceived>().map { it.entry }
+
+    /**
+     * [activity] with an explicit [ActivityEvent.Opened] once the daemon has
+     * accepted the subscription, so a reconnecting consumer can tell an open
+     * failure from a stream that opened and later dropped.
+     */
+    public fun activityEvents(options: ActivityOptions = ActivityOptions()): Flow<ActivityEvent>
 
     public suspend fun exit(request: ExitRequest): ExitResult
 
@@ -151,6 +161,15 @@ public data class SendOutcome(
     /** The Lightning payment hash from the quote, when there is one. */
     val paymentHash: String?,
 )
+
+/** Events on [WavelengthClient.activityEvents]. */
+public sealed class ActivityEvent {
+    /** The subscription is open; entries follow. */
+    public data object Opened : ActivityEvent()
+
+    /** An activity entry was created or progressed. */
+    public data class EntryReceived(val entry: Entry) : ActivityEvent()
+}
 
 /** The client-side lifecycle of the embedded daemon. */
 public enum class RuntimeLifecycle { STOPPED, STARTING, RUNNING, STOPPING }

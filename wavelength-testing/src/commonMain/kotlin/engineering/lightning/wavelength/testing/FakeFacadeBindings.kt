@@ -13,7 +13,9 @@ import engineering.lightning.wavelength.model.Entry
 import engineering.lightning.wavelength.model.EntryKind
 import engineering.lightning.wavelength.model.EntryProgress
 import engineering.lightning.wavelength.model.EntryStatus
+import engineering.lightning.wavelength.model.ExitResult
 import engineering.lightning.wavelength.model.ExitSummaryResult
+import engineering.lightning.wavelength.model.GetExitPlanResult
 import engineering.lightning.wavelength.model.ExternalSeedWalletOpenResult
 import engineering.lightning.wavelength.model.Info
 import engineering.lightning.wavelength.model.ListResult
@@ -82,6 +84,12 @@ public class FakeFacadeBindings(
 
     /** The identity reported once a wallet exists. */
     public val identityPubKey: String = "02" + "ab".repeat(32)
+
+    /** Scripts GetExitPlan: receives the requested outpoints. */
+    public var exitPlanHandler: ((List<String>) -> GetExitPlanResult)? = null
+
+    /** Scripts Exit: receives the outpoint and whether it was a forced unroll. */
+    public var exitHandler: ((outpoint: String, forceUnroll: Boolean) -> ExitResult)? = null
 
     /** Every call made, as (verb wire name, request JSON), oldest first. */
     public val requests: List<Pair<String, String>> get() = synchronized(lock) { _requests.toList() }
@@ -200,21 +208,35 @@ public class FakeFacadeBindings(
         return result
     }
 
-    override fun subscribe(request: ByteArray): FacadeSubscription = synchronized(lock) {
+    override fun subscribe(request: ByteArray): FacadeSubscription {
         val body = request.decodeToString()
-        record("subscribe", body)
-        requireWallet("subscribe")
         val req = if (body.isBlank()) JsonObject(emptyMap()) else json.parseToJsonElement(body).jsonObject
         val kinds = req["Kinds"]?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.jsonArray
             ?.map { EntryKind.fromWire(it.jsonPrimitive.content) }?.toSet().orEmpty()
-        val cursor = req["Cursor"]?.jsonPrimitive?.longOrNull ?: 0
-        val sub = FakeSubscription(kinds)
-        if (req.bool("IncludeExisting") || cursor > 0) {
-            entries.filter { it.cursor > cursor }.sortedBy { it.cursor }.forEach(sub::offer)
-        }
-        subscriptions += sub
-        sub
+        return open("subscribe", body, req.bool("IncludeExisting"), kinds, req["Cursor"]?.jsonPrimitive?.longOrNull ?: 0)
     }
+
+    /**
+     * Opens an activity subscription whose [SuspendingSubscription.receive]
+     * suspends instead of blocking a thread, for tests on virtual time.
+     */
+    public fun openSubscription(
+        includeExisting: Boolean = false,
+        kinds: Set<EntryKind> = emptySet(),
+        cursor: Long = 0,
+    ): SuspendingSubscription = open("subscribe", "", includeExisting, kinds, cursor)
+
+    private fun open(verb: String, body: String, includeExisting: Boolean, kinds: Set<EntryKind>, cursor: Long): FakeSubscription =
+        synchronized(lock) {
+            record(verb, body)
+            requireWallet(verb)
+            val sub = FakeSubscription(kinds)
+            if (includeExisting || cursor > 0) {
+                entries.filter { it.cursor > cursor }.sortedBy { it.cursor }.forEach(sub::offer)
+            }
+            subscriptions += sub
+            sub
+        }
 
     // --- verbs -----------------------------------------------------------------
 
@@ -328,6 +350,19 @@ public class FakeFacadeBindings(
             encode(ListResult.serializer(), result) to null
         }
         FacadeVerb.EXIT_SUMMARY -> encode(ExitSummaryResult.serializer(), ExitSummaryResult()) to null
+        FacadeVerb.GET_EXIT_PLAN -> {
+            requireReady(verb.wireName)
+            val handler = exitPlanHandler ?: error("FakeFacadeBindings.exitPlanHandler is not set")
+            val outpoints = req["Outpoints"]?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.jsonArray
+                ?.map { it.jsonPrimitive.content }.orEmpty()
+            encode(GetExitPlanResult.serializer(), handler(outpoints)) to null
+        }
+        FacadeVerb.EXIT -> {
+            requireReady(verb.wireName)
+            val handler = exitHandler ?: error("FakeFacadeBindings.exitHandler is not set")
+            val result = handler(req.string("Outpoint").orEmpty(), !req.string("ForceUnrollAck").isNullOrEmpty())
+            encode(ExitResult.serializer(), result) to null
+        }
         else -> error("FakeFacadeBindings does not simulate ${verb.wireName}")
     }
 
@@ -415,7 +450,7 @@ public class FakeFacadeBindings(
     private fun JsonObject.long(key: String): Long = this[key]?.jsonPrimitive?.longOrNull ?: 0
     private fun JsonObject.bool(key: String): Boolean = this[key]?.jsonPrimitive?.booleanOrNull ?: false
 
-    private inner class FakeSubscription(private val kinds: Set<EntryKind>) : FacadeSubscription {
+    private inner class FakeSubscription(private val kinds: Set<EntryKind>) : FacadeSubscription, SuspendingSubscription {
         private val channel = Channel<Result<Entry>>(Channel.UNLIMITED)
 
         fun offer(entry: Entry) {
@@ -432,9 +467,14 @@ public class FakeFacadeBindings(
         }
 
         override fun next(): ByteArray? {
+            val entry = runBlocking { receive() } ?: return null
+            return encode(Entry.serializer(), entry)
+        }
+
+        override suspend fun receive(): Entry? {
             synchronized(lock) { failures["next"]?.removeFirstOrNull() }?.let { throw FakeBindingException(it) }
-            val item = runBlocking { channel.receiveCatching() }.getOrNull() ?: return null
-            return encode(Entry.serializer(), item.getOrThrow())
+            val item = channel.receiveCatching().getOrNull() ?: return null
+            return item.getOrThrow()
         }
 
         override fun close() {
@@ -442,6 +482,14 @@ public class FakeFacadeBindings(
             channel.close()
         }
     }
+}
+
+/** A non-blocking view of a fake activity subscription. */
+public interface SuspendingSubscription {
+    /** The next entry, or null at a clean end; throws on a stream error. */
+    public suspend fun receive(): Entry?
+
+    public fun close()
 }
 
 /** An error thrown by [FakeFacadeBindings], carrying Go-style message text. */
