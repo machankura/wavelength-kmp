@@ -1,8 +1,8 @@
 plugins {
     id("wavelength.kmp-library")
+    id("wavelength.serialization")
     id("wavelength.publishing")
 }
-
 description = "Wavelength Kotlin Multiplatform SDK: client contract, models, config, and errors."
 
 // Generates RuntimePin.kt so the code knows which daemon tag it was built against.
@@ -31,6 +31,16 @@ kotlin {
     sourceSets {
         commonMain {
             kotlin.srcDir(generateRuntimePin)
+            dependencies {
+                api(libs.kotlinx.coroutines.core)
+                api(libs.kotlinx.serialization.json)
+            }
+        }
+        commonTest.dependencies {
+            implementation(libs.kotlinx.coroutines.test)
+        }
+        all {
+            languageSettings.optIn("kotlin.io.encoding.ExperimentalEncodingApi")
         }
     }
 }
