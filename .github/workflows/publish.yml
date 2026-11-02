@@ -64,10 +64,10 @@ jobs:
       - name: Build the XCFrameworks
         run: |
           set -euo pipefail
-          ./gradlew :wavelength-embedded:assembleWavelengthKitReleaseXCFramework -Prelease=true \
+          ./gradlew :wavelength-kit:assembleWavelengthKitReleaseXCFramework -Prelease=true \
             -PversionSuffix=${{ steps.version.outputs.suffix }}
           mkdir -p dist
-          (cd wavelength-embedded/build/XCFrameworks/release && zip -qry ../../../../dist/WavelengthKit.xcframework.zip WavelengthKit.xcframework)
+          (cd wavelength-kit/build/XCFrameworks/release && zip -qry ../../../../dist/WavelengthKit.xcframework.zip WavelengthKit.xcframework)
           (cd bindings/ios && zip -qry ../../dist/Wavewalletdk.xcframework.zip Wavewalletdk.xcframework)
 
       - name: Commit Package.swift and tag

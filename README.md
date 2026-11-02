@@ -51,6 +51,8 @@ and the sample in [samples/android](samples/android).
 | `wavelength-core` | jvm, android, iOS | The client contract, generated models, config and network presets, typed errors, a lifecycle-safe client over an abstract binding, destination parsing, and `exitBatch` |
 | `wavelength-engine` | jvm, android, iOS | `WalletEngine`, a port of the TypeScript SDK's engine (same phases and timings) |
 | `wavelength-embedded` | android, iOS | Binds the core to the gomobile `Wavewalletdk` runtime; also provides `Wavelength.client` and the background/resume policy |
+| `wavelength-passkey` | jvm, android, iOS | Passkey (WebAuthn PRF) wallets: `PasskeyCeremony`, the Android Credential Manager authenticator, and the iOS authenticator protocol (its Swift implementation is in `swift/WavelengthPasskey`) |
+| `wavelength-kit` | iOS (macOS builds only) | The `WavelengthKit` XCFramework that Swift apps consume, exporting every module, with SKIE |
 | `wavelength-testing` | jvm, android, iOS | `FakeFacadeBindings` and `FakeWavelengthClient`: a simulated wallet for tests and previews |
 | `wavelength-bindings-android` | Android | The upstream `Wavewalletdk.aar`, republished without changes |
 

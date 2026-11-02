@@ -1,10 +1,8 @@
-import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
 import org.jetbrains.kotlin.konan.target.HostManager
 
 plugins {
     id("wavelength.kmp-base")
     id("wavelength.publishing")
-    alias(libs.plugins.skie) apply false
 }
 
 description = "Runs the wavelength daemon in-process through its gomobile bindings (Android .aar, iOS .xcframework)."
@@ -26,6 +24,7 @@ kotlin {
         androidMain.dependencies {
             implementation("engineering.lightning.wavelength:wavelength-bindings-android:$bindingsVersion")
             implementation(libs.androidx.lifecycle.process)
+            implementation(libs.androidx.core.ktx)
         }
         getByName("androidHostTest").dependencies {
             implementation(projects.wavelengthTesting)
@@ -43,10 +42,7 @@ kotlin {
 // iOS: cinterop over the staged Wavewalletdk.xcframework. Apple cinterop needs
 // Xcode, so the iOS targets exist only on macOS hosts (ADR 0002, 0004).
 if (HostManager.hostIsMac) {
-    apply(plugin = "co.touchlab.skie")
-
     val xcframework = rootProject.file("bindings/ios/Wavewalletdk.xcframework")
-    val wavelengthKit = XCFramework("WavelengthKit")
 
     kotlin {
         listOf(
@@ -63,12 +59,6 @@ if (HostManager.hostIsMac) {
             // dependency (ADR 0004).
             target.binaries.all {
                 linkerOpts("-F$sliceDir", "-framework", "Wavewalletdk", "-lresolv")
-            }
-            target.binaries.framework {
-                baseName = "WavelengthKit"
-                isStatic = true
-                export(projects.wavelengthCore)
-                wavelengthKit.add(this)
             }
         }
 

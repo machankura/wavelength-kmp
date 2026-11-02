@@ -33,8 +33,14 @@ slice, and Maven Central deployment size limits that are not yet verified.
 - `wavelength-embedded/src/nativeInterop/cinterop/wavewalletdk.def` binds the
   `Wavewalletdk` clang module. `build.gradle.kts` adds `-F<slice>` for each
   target (`ios-arm64`, `ios-arm64_x86_64-simulator`).
-- iOS targets, cinterop, SKIE, and the `WavelengthKit` XCFramework (static,
-  exports `wavelength-core`) are configured only on macOS hosts.
+- iOS targets and cinterop are configured only on macOS hosts.
+- `wavelength-kit` is an iOS-only umbrella module, included in the build only
+  on macOS. It produces the static `WavelengthKit` XCFramework, exports
+  core, engine, embedded, and passkey, and runs SKIE.
+- The passkey ceremony's iOS half is Swift (`swift/WavelengthPasskey`),
+  because the AuthenticationServices PRF API is Swift-only. It implements the
+  Kotlin `CallbackPasskeyAuthenticator` protocol: Swift cannot implement
+  Kotlin `suspend` functions.
 - Test executables link `-framework Wavewalletdk -lresolv` themselves; apps
   link the Go framework through their own dependency on it.
 

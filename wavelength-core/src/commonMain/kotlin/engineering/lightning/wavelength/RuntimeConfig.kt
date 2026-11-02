@@ -1,16 +1,19 @@
 package engineering.lightning.wavelength
 
 import engineering.lightning.wavelength.wire.MobileConfig
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
 /** The Bitcoin network the embedded daemon runs against. */
+@Serializable
 public enum class Network(public val wire: String) {
-    MAINNET("mainnet"),
+    @SerialName("mainnet") MAINNET("mainnet"),
 
     /** Bitcoin testnet3. */
-    TESTNET("testnet"),
-    TESTNET4("testnet4"),
-    SIGNET("signet"),
-    REGTEST("regtest"),
+    @SerialName("testnet") TESTNET("testnet"),
+    @SerialName("testnet4") TESTNET4("testnet4"),
+    @SerialName("signet") SIGNET("signet"),
+    @SerialName("regtest") REGTEST("regtest"),
 }
 
 /** The embedded on-chain wallet backend. */

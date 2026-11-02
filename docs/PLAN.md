@@ -22,7 +22,7 @@ Sources surveyed (default branch `main` of each repo, as of 2026-11-02):
 | 3 iOS | Written, not built | cinterop, SKIE, and the XCFramework are wired for macOS hosts only. The first build is the macOS CI job. |
 | 4 WalletEngine | Done | The TS phase table and engine behaviours are ported, with tests on virtual time. |
 | 5 Sample, docs, release | Mostly done | The sample is a Jetpack Compose Android app (shared logic in `WalletEngine`), not Compose Multiplatform. The release workflow and `Package.swift` generation have not been run yet. |
-| 6 Passkeys, external seed | Partly done | `startExternalSeedWallet` and `openWalletFromPasskey` are in the client. The platform passkey ceremony (`wavelength-passkey`) is not built yet. |
+| 6 Passkeys, external seed | Done, partly verified | `wavelength-passkey`: the common ceremony is unit-tested on the JVM and Android host; the Android Credential Manager authenticator compiles; the iOS authenticator is a Swift target ported from the React Native SDK. `WalletProfiles` handles multiple wallets. A ceremony on a real device still needs an rpId with Digital Asset Links or an AASA file. |
 | 7 Beyond mobile | Not started | Needs upstream U4. |
 | 8 Hardening | Not started | |
 

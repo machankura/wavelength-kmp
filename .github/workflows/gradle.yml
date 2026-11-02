@@ -52,7 +52,7 @@ jobs:
       - name: Simulator tests (pure modules and the embedded runtime)
         run: ./gradlew iosSimulatorArm64Test --continue
       - name: Assemble the WavelengthKit XCFramework
-        run: ./gradlew :wavelength-embedded:assembleWavelengthKitXCFramework
+        run: ./gradlew :wavelength-kit:assembleWavelengthKitXCFramework
 
   android-device:
     name: Android emulator tests (real runtime)

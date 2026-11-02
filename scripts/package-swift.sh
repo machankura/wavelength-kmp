@@ -30,6 +30,7 @@ let package = Package(
     platforms: [.iOS(.v15)],
     products: [
         .library(name: "WavelengthKit", targets: ["WavelengthKit", "Wavewalletdk", "WavelengthKitLinks"]),
+        .library(name: "WavelengthPasskey", targets: ["WavelengthPasskey"]),
     ],
     targets: [
         .binaryTarget(
@@ -47,6 +48,12 @@ let package = Package(
             name: "WavelengthKitLinks",
             path: "swift/WavelengthKitLinks",
             linkerSettings: [.linkedLibrary("resolv")]
+        ),
+        // The iOS 18+ passkey authenticator for PasskeyCeremony.
+        .target(
+            name: "WavelengthPasskey",
+            dependencies: ["WavelengthKit"],
+            path: "swift/WavelengthPasskey"
         ),
     ]
 )

@@ -38,7 +38,9 @@ Helpers ported from TypeScript:
 - `exitBatch` and `isFundable` (from `isExitInfeasibilityFundable`)
 - `WalletEngine` (from the `WalletEngine` in `engine/`)
 
+- the passkey ceremony (`PasskeyCeremony`, ported from `nativePasskeyCeremony`), with `CredentialManagerAuthenticator` on Android and the `WavelengthPasskey` Swift target on iOS
+- the wallet registry (`WalletProfiles`, ported from the demo apps' `walletRegistry`)
+
 Not ported yet:
 
-- the passkey ceremony (WebAuthn / Credential Manager / AuthenticationServices)
 - performance events

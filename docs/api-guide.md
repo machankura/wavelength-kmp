@@ -149,7 +149,58 @@ policy.bindToProcessLifecycle()       // Android; iOS: bindToApplicationLifecycl
 policy.restarts.collect { result -> promptUnlock() }   // the restarted wallet is LOCKED
 ```
 
-## 10. Errors
+## 10. Passkey wallets
+
+A passkey can stand in for the mnemonic and password. The WebAuthn PRF
+extension, evaluated with wavelength's fixed salt, yields 32 bytes, and the
+daemon derives the wallet from them. The same passkey gives the same wallet
+on every device where it syncs.
+
+```kotlin
+// Android: Credential Manager. Your rpId domain must publish Digital Asset Links for the app.
+val authenticator = CredentialManagerAuthenticator(context) { currentActivity }
+// iOS (Swift): the WavelengthPasskey target in the Swift package (iOS 18+;
+// associated domains webcredentials:<rpId>):
+//   PasskeyAuthenticatorCompanion.shared.fromCallbacks(callbacks: WavelengthPasskey())
+val ceremony = PasskeyCeremony(authenticator, rpId = "wallet.example.com")
+
+if (ceremony.isSupported()) {
+    client.start(config)                                          // at this wallet's dataDir
+    val created = client.createPasskeyWallet(ceremony, appName = "My Wallet")
+    saveCredentialId(created.credentialId)                        // public; scopes later unlocks
+    // Later launches:
+    client.openPasskeyWallet(ceremony, credentialId = savedCredentialId)
+}
+```
+
+Failures are `PasskeyException`s:
+
+- `Cancelled`
+- `NoCredential`
+- `Unavailable`
+- `PrfUnsupported` (the authenticator has no PRF support)
+- `TimedOut`
+- `Failed`
+
+## 11. Several wallets
+
+The daemon runs one wallet at a time. `WalletProfiles` keeps a list of the
+wallets on the device. Each wallet gets its own data directory under a
+root.
+
+```kotlin
+val profiles = WalletProfiles(SharedPreferencesProfileStore(context), Wavelength.defaultDataDir(context))
+val profile = profiles.create("Spending", Network.SIGNET, WalletKind.PASSKEY, credentialId = created.credentialId)
+
+client.stop()                                      // switch wallets
+client.start(profile.config(RuntimeConfig.preset(Network.SIGNET)))
+```
+
+On iOS, use `UserDefaultsProfileStore()`. `EXTERNAL_SEED` profiles are
+opened with `startExternalSeedWallet(profile.config(base), request)`.
+Pinning `identityPubKey` after the first open is a good safeguard.
+
+## 12. Errors
 
 Every failure is a `WavelengthException` subtype. `code` matches the
 TypeScript SDK where the two overlap.
