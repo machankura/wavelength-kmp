@@ -23,4 +23,5 @@ internal object GoFixtures {
     const val REQ_SUBSCRIBE: String = """{"IncludeExisting":true,"Kinds":null,"Cursor":7}"""
     const val REQ_SEND_PREPARED: String = """{"SendIntentID":"intent-1"}"""
     const val REQ_EXIT_SUMMARY: String = """{}"""
+    const val MOBILE_CONFIG_KEYS: String = "allow_mainnet,auto_refresh_fee_floor_sat,auto_refresh_fee_rate_ppm,buffer_size,data_dir,debug_level,eager_round_join,max_operator_fee_sat,max_payment_cltv,network,server_address,server_insecure,server_tls_cert_path,server_transport,signing_workers,swap_database_file_name,swap_server_address,swap_server_insecure,swap_server_tls_cert_path,swap_server_transport,wallet_block_headers_source,wallet_esplora_url,wallet_fee_url,wallet_filter_headers_source,wallet_password_file,wallet_poll_interval_seconds,wallet_recovery_window,wallet_type"
 }

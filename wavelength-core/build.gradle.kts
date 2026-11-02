@@ -37,6 +37,7 @@ kotlin {
             }
         }
         commonTest.dependencies {
+            implementation(projects.wavelengthTesting)
             implementation(libs.kotlinx.coroutines.test)
         }
         all {

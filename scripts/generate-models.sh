@@ -48,7 +48,9 @@ else
 		echo "error: ${tarball} digest ${got} does not match manifest (${want:-missing})" >&2
 		exit 1
 	fi
-	tar -xzf "${work}/${tarball}" -C "${work}" wavelength-source/sdk/wavewalletdk/types.go
+	tar -xzf "${work}/${tarball}" -C "${work}" \
+		wavelength-source/sdk/wavewalletdk/types.go \
+		wavelength-source/sdk/wavewalletdk/mobile/config.go
 	types="${work}/wavelength-source/sdk/wavewalletdk/types.go"
 fi
 
@@ -74,6 +76,10 @@ mkdir -p "$(dirname "${fixtures_out}")"
 		json="${json//\$/\$\{\'\$\'\}}"
 		printf '    const val %s: String = """%s"""\n' "${const}" "${json}"
 	done
+	# The json tags of the facade's Start config (sdk/wavewalletdk/mobile/config.go).
+	keys="$(sed -n '/^type mobileConfig struct/,/^}/p' "$(dirname "${types}")/mobile/config.go" \
+		| grep -o 'json:"[a-z_]*"' | sed 's/json:"\(.*\)"/\1/' | sort | paste -sd, -)"
+	printf '    const val MOBILE_CONFIG_KEYS: String = "%s"\n' "${keys}"
 	echo "}"
 } > "${fixtures_out}"
 
