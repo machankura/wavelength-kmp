@@ -1,7 +1,7 @@
 // Shared Kotlin Multiplatform setup for every wavelength-kmp module: the Android
-// and iOS targets the gomobile bindings exist for, explicit API mode, and a
-// namespace derived from the module name. Modules that also run on the plain
-// JVM apply wavelength.kmp-library instead.
+// target, explicit API mode, and a namespace derived from the module name.
+// Pure-Kotlin modules apply wavelength.kmp-library (adds iOS and the JVM);
+// wavelength-embedded adds its iOS targets itself, with cinterop.
 
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -30,9 +30,6 @@ kotlin {
             jvmTarget = JvmTarget.JVM_11
         }
     }
-
-    iosArm64()
-    iosSimulatorArm64()
 
     compilerOptions {
         freeCompilerArgs.add("-Xexpect-actual-classes")

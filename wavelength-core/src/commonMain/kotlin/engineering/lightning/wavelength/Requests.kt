@@ -10,7 +10,8 @@ import engineering.lightning.wavelength.model.ListView
 /**
  * Creates a wallet, or restores one when [mnemonic] is set.
  *
- * @property password Encrypts the seed on disk; needed again to unlock.
+ * @property password Encrypts the seed on disk; needed again to unlock. At
+ *   least 8 bytes (the daemon's minimum).
  * @property mnemonic Empty for a fresh wallet (the result carries the words to
  *   back up), or the aezeed words to restore.
  * @property seedPassphrase Optional aezeed passphrase for a restored seed.

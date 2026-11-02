@@ -186,7 +186,9 @@ public class FacadeWavelengthClient(
     // --- wallet setup --------------------------------------------------------
 
     override suspend fun createWallet(request: CreateWalletRequest): CreateWalletResult {
-        if (request.password.isEmpty()) throw WavelengthException.InvalidArgument("password must not be empty")
+        if (request.password.size < MIN_PASSWORD_BYTES) {
+            throw WavelengthException.InvalidArgument("password must be at least $MIN_PASSWORD_BYTES bytes")
+        }
         request.recoveryWindow?.let {
             if (it !in 0..0xFFFF_FFFFL) throw WavelengthException.InvalidArgument("recoveryWindow must fit in uint32")
         }
@@ -453,6 +455,9 @@ public class FacadeWavelengthClient(
 
         /** The facade's maximum receive deadline. */
         public const val MAX_RECEIVE_TIMEOUT_SECONDS: Long = 300
+
+        /** The daemon's minimum wallet password length. */
+        public const val MIN_PASSWORD_BYTES: Int = 8
 
         /** WebAuthn PRF output size. */
         public const val PRF_OUTPUT_SIZE: Int = 32

@@ -6,6 +6,11 @@
 #   bindings/android/Wavewalletdk.aar
 #   bindings/ios/Wavewalletdk.xcframework
 #
+# The .aar is also installed into a file Maven repository, bindings/maven, as
+# engineering.lightning.wavelength:wavelength-bindings-android:<tag>, which is
+# how wavelength-embedded resolves it (the same coordinate it is published
+# under; see docs/adr/0005-android-binary-packaging.md).
+#
 # By default it downloads the release assets that wavelength CI attaches to
 # every v* tag (the repository is public, so no credentials are needed). Set
 # WAVELENGTH_DIR to a local wavelength checkout to build them from source with
@@ -103,6 +108,27 @@ fetch_android() {
 		mv "${dest}.part" "${dest}"
 	fi
 	echo "==> staged ${dest}"
+	install_maven "${dest}"
+}
+
+# install_maven publishes the staged .aar into the build's local file repository.
+install_maven() {
+	local aar="$1" version="${TAG#v}"
+	local dir="${OUT}/maven/engineering/lightning/wavelength/wavelength-bindings-android/${version}"
+	local base="${dir}/wavelength-bindings-android-${version}"
+	mkdir -p "${dir}"
+	cp "${aar}" "${base}.aar"
+	cat > "${base}.pom" <<POM
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>engineering.lightning.wavelength</groupId>
+  <artifactId>wavelength-bindings-android</artifactId>
+  <version>${version}</version>
+  <packaging>aar</packaging>
+</project>
+POM
+	echo "==> installed engineering.lightning.wavelength:wavelength-bindings-android:${version} into bindings/maven"
 }
 
 fetch_ios() {

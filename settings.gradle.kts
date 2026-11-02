@@ -9,6 +9,13 @@ pluginManagement {
 
 dependencyResolutionManagement {
     repositories {
+        // The pinned gomobile .aar, installed by scripts/fetch-bindings.sh.
+        exclusiveContent {
+            forRepository {
+                maven(rootDir.resolve("bindings/maven")) { name = "wavelengthBindings" }
+            }
+            filter { includeModule("engineering.lightning.wavelength", "wavelength-bindings-android") }
+        }
         google()
         mavenCentral()
     }
@@ -20,3 +27,5 @@ enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 include(":wavelength-core")
 include(":wavelength-testing")
+include(":wavelength-embedded")
+include(":wavelength-bindings-android")

@@ -45,7 +45,7 @@ class FacadeWavelengthClientTest {
 
     private suspend fun readyWallet(balance: Long = 0) {
         client.start(config)
-        client.createWallet(CreateWalletRequest("pw"))
+        client.createWallet(CreateWalletRequest("password1"))
         if (balance > 0) {
             val r = client.receive(ReceiveRequest(balance))
             bindings.settle(r.entry.id)
@@ -116,11 +116,18 @@ class FacadeWavelengthClientTest {
     @Test
     fun createWalletSendsPascalCaseBase64Password() = realTimeTest {
         client.start(config)
-        val r = client.createWallet(CreateWalletRequest("pw"))
+        val r = client.createWallet(CreateWalletRequest("password1"))
         assertEquals(24, r.mnemonic.size)
         val req = lastRequest("createWallet")
-        assertEquals(Base64.encode("pw".encodeToByteArray()), req["WalletPassword"]?.jsonPrimitive?.content)
+        assertEquals(Base64.encode("password1".encodeToByteArray()), req["WalletPassword"]?.jsonPrimitive?.content)
         assertTrue(client.getInfo().walletReady)
+    }
+
+    @Test
+    fun shortPasswordIsRejectedLocally() = realTimeTest {
+        client.start(config)
+        assertFailsWith<WavelengthException.InvalidArgument> { client.createWallet(CreateWalletRequest("short")) }
+        assertTrue(bindings.requests.none { it.first == "createWallet" })
     }
 
     @Test
@@ -134,7 +141,7 @@ class FacadeWavelengthClientTest {
         readyWallet()
         client.stop()
         assertEquals(WalletState.LOCKED, client.start(config).walletState)
-        client.unlockWallet("pw".encodeToByteArray())
+        client.unlockWallet("password1".encodeToByteArray())
         assertTrue(client.walletReady())
     }
 
@@ -300,9 +307,9 @@ class FacadeWavelengthClientTest {
         logging.start(config)
         val log = async(start = CoroutineStart.UNDISPATCHED) { logging.events.first { it is WavelengthEvent.Log && it.message.startsWith("createWallet") } }
         yield()
-        launch { logging.createWallet(CreateWalletRequest("hunter2")) }
+        launch { logging.createWallet(CreateWalletRequest("hunter2hunter2")) }
         val line = (withTimeout(5.seconds) { log.await() } as WavelengthEvent.Log).message
-        assertFalse(line.contains(Base64.encode("hunter2".encodeToByteArray())))
+        assertFalse(line.contains(Base64.encode("hunter2hunter2".encodeToByteArray())))
         assertTrue(line.contains("<redacted>"))
     }
 }
