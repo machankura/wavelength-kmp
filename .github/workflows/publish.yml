@@ -1,21 +1,59 @@
-name: Publish
+name: Release
+
+# Run manually with the version to release. The version must be the pinned
+# daemon version (wavelength.version without the "v"), optionally followed
+# by -kmp.N for a library-only release (ADR 0003).
 on:
-  release:
-    types: [released, prereleased]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Library version, e.g. 0.2.1 or 0.2.1-kmp.1
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
 jobs:
-  publish:
-    name: Release build and publish
-    runs-on: macOS-latest
+  release:
+    runs-on: macos-latest
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
+          distribution: zulu
           java-version: 21
-      - name: Publish to MavenCentral
-        run: ./gradlew publishToMavenCentral --no-configuration-cache
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Check the version against the pin
+        id: version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          pin="$(tr -d '[:space:]' < wavelength.version)"
+          base="${pin#v}"
+          case "$VERSION" in
+            "$base") suffix="" ;;
+            "$base"-kmp.[0-9]*) suffix="${VERSION#"$base"}" ;;
+            *) echo "version $VERSION does not match pin $pin" >&2; exit 1 ;;
+          esac
+          echo "suffix=$suffix" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Stage and verify the pinned bindings
+        run: scripts/fetch-bindings.sh all
+
+      - name: Check generated models against the pin
+        run: scripts/generate-models.sh --check
+
+      - name: Test
+        run: ./gradlew check iosSimulatorArm64Test
+
+      - name: Publish to Maven Central
+        run: >
+          ./gradlew publishToMavenCentral --no-configuration-cache
+          -Prelease=true -PversionSuffix=${{ steps.version.outputs.suffix }}
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
@@ -23,3 +61,33 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_KEY_CONTENTS }}
 
+      - name: Build the XCFrameworks
+        run: |
+          set -euo pipefail
+          ./gradlew :wavelength-embedded:assembleWavelengthKitReleaseXCFramework -Prelease=true \
+            -PversionSuffix=${{ steps.version.outputs.suffix }}
+          mkdir -p dist
+          (cd wavelength-embedded/build/XCFrameworks/release && zip -qry ../../../../dist/WavelengthKit.xcframework.zip WavelengthKit.xcframework)
+          (cd bindings/ios && zip -qry ../../dist/Wavewalletdk.xcframework.zip Wavewalletdk.xcframework)
+
+      - name: Commit Package.swift and tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          scripts/package-swift.sh "$TAG" dist
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Package.swift
+          git commit -m "release: Package.swift for $TAG"
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          prerelease=""
+          case "$TAG" in *-rc*|*-beta*|*-alpha*) prerelease="--prerelease" ;; esac
+          gh release create "$TAG" dist/*.zip --title "$TAG" --generate-notes $prerelease

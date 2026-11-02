@@ -45,9 +45,11 @@ kotlin {
 
 // The library version tracks the pinned wavelength daemon tag (see
 // wavelength.version and docs/adr/0003-versioning-and-pinning.md). Builds are
-// snapshots unless -Prelease=true is passed by the release workflow.
+// snapshots unless -Prelease=true is passed by the release workflow, which may
+// add -PversionSuffix=-kmp.N for a library-only release.
 fun wavelengthVersion(): String {
     val tag = rootProject.file("wavelength.version").readText().trim().removePrefix("v")
+    val suffix = providers.gradleProperty("versionSuffix").orNull.orEmpty()
     val release = providers.gradleProperty("release").orNull == "true"
-    return if (release) tag else "$tag-SNAPSHOT"
+    return if (release) "$tag$suffix" else "$tag$suffix-SNAPSHOT"
 }

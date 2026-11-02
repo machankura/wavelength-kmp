@@ -12,6 +12,31 @@ Sources surveyed (default branch `main` of each repo, as of 2026-11-02):
 | `lightninglabs/wavelength-sdk` | `6f71128` (pinned to daemon `v0.2.0`) | `packages/core` (client contract, `WalletEngine`, config presets, errors), `packages/react-native` (Kotlin/ObjC dispatch over the same bindings) |
 | `lightninglabs/wavelength-mobile` | `ba90d14` | `android/walletkit` (Kotlin `WalletClient`), `ios/WalletKit` (Swift actor), fetch scripts |
 
+## Implementation status (2026-11-02)
+
+| Phase | State | Notes |
+|-------|-------|-------|
+| 0 Foundations | Done | Build-logic, the daemon pin (`v0.2.1`), `fetch-bindings.sh` with digests, ADRs 0001–0005. The iOS spike still needs macOS (ADR 0004). |
+| 1 Core and codegen | Done | `tools/kotlin-modelgen` and golden Go fixtures; `RuntimeConfig`, errors, `FacadeWavelengthClient`; `wavelength-testing`. |
+| 2 Android | Done, verified | Instrumented tests pass on a 16 KB-page API 37 emulator against signet. |
+| 3 iOS | Written, not built | cinterop, SKIE, and the XCFramework are wired for macOS hosts only. The first build is the macOS CI job. |
+| 4 WalletEngine | Done | The TS phase table and engine behaviours are ported, with tests on virtual time. |
+| 5 Sample, docs, release | Mostly done | The sample is a Jetpack Compose Android app (shared logic in `WalletEngine`), not Compose Multiplatform. The release workflow and `Package.swift` generation have not been run yet. |
+| 6 Passkeys, external seed | Partly done | `startExternalSeedWallet` and `openWalletFromPasskey` are in the client. The platform passkey ceremony (`wavelength-passkey`) is not built yet. |
+| 7 Beyond mobile | Not started | Needs upstream U4. |
+| 8 Hardening | Not started | |
+
+Findings from implementation:
+
+- **INTERNET permission.** The embedded daemon needs it. `wavelength-embedded`
+  now declares it in its library manifest.
+- **Password length.** The daemon rejects wallet passwords under 8 bytes.
+  The client now checks this before calling the daemon.
+- **Unsigned binaries.** wavelength's signed release manifest does not cover
+  the mobile binding assets (U7 below).
+- **Stale walletkit host.** wavelength-mobile's signet operator host
+  (`arkd-signet.testnet.lightningcluster.com`) no longer resolves.
+
 ---
 
 ## 1. Goals and non-goals
@@ -740,6 +765,7 @@ fails when the Go facade gains an exported function the table doesn't list
 | U4 | C-shared build of the facade (Phase 7.1). | JVM desktop and Linux/macOS native targets. | Only for Phase 7 |
 | U5 | A written spec for external-seed derivation (root → 16-byte entropy, path, versioning). | Interop between SDKs and apps that manage seeds outside wavelength. | Only for a derivation helper |
 | U6 | Fix the RN SDK's missing lifecycle queue; align wavelength-mobile signet defaults with the TS presets. | Consistency across SDKs (noticed during this survey). | No |
+| U7 | List `Wavewalletdk.aar` and `Wavewalletdk.xcframework.tar.gz` in the signed release manifest. | Consumers could then verify the binaries against a maintainer signature instead of a digest recorded on first download (`bindings.digests`). | No |
 
 ---
 
