@@ -153,6 +153,12 @@ private fun requireDescriptors(descriptors: List<String>) {
     }
 }
 
+/**
+ * A wallet birthday from Unix seconds, for Swift hosts: `kotlin.time.Instant` has
+ * no bridge to `Date`, and this takes `Int64(date.timeIntervalSince1970)`.
+ */
+public fun walletBirthday(unixSeconds: Long): Instant = Instant.fromEpochSeconds(unixSeconds)
+
 // The rules for a watch-only wallet's key material, whichever request carries it.
 // The names are how that request spells its fields, for its error messages.
 private fun requireWatchOnlyKeys(

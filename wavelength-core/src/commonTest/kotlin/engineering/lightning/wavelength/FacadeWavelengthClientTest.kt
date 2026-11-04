@@ -302,6 +302,11 @@ class FacadeWavelengthClientTest {
     }
 
     @Test
+    fun walletBirthdayIsInUnixSeconds() {
+        assertEquals(Instant.parse("2026-01-01T00:00:00Z"), walletBirthday(1_767_225_600))
+    }
+
+    @Test
     fun descriptorCreateValidation() = realTimeTest {
         val descriptors = listOf("tr(tprv1/86h/0h/0h/<0;1>/*)")
         client.start(config)
