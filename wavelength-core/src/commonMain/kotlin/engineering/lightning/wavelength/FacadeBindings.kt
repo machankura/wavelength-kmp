@@ -20,6 +20,9 @@ public interface FacadeBindings {
     /** Atomically boots the daemon and imports or unlocks an external-seed wallet. */
     public fun startExternalSeedWallet(request: ByteArray): ByteArray
 
+    /** Atomically boots the daemon and imports or unlocks a descriptor wallet. */
+    public fun startDescriptorWallet(request: ByteArray): ByteArray
+
     /** Tears the daemon down. Idempotent. */
     public fun stop()
 
@@ -55,7 +58,7 @@ public interface FacadeSubscription {
 /**
  * The facade's JSON verbs. [wireName] matches the TypeScript SDK's
  * `FacadeMethod` and the wasm `wavewalletdkCall` method names. Lifecycle verbs
- * (start, stop, startExternalSeedWallet) are deliberately absent: they go
+ * (start, stop, and the atomic wallet starts) are deliberately absent: they go
  * through the typed, serialised methods on [WavelengthClient].
  */
 public enum class FacadeVerb(public val wireName: String) {

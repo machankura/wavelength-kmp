@@ -5,6 +5,7 @@ import engineering.lightning.wavelength.internal.WireJson
 import engineering.lightning.wavelength.model.Balance
 import engineering.lightning.wavelength.model.CreateWalletResult
 import engineering.lightning.wavelength.model.DepositResult
+import engineering.lightning.wavelength.model.DescriptorWalletOpenResult
 import engineering.lightning.wavelength.model.Entry
 import engineering.lightning.wavelength.model.ExitResult
 import engineering.lightning.wavelength.model.ExitStatusResult
@@ -22,6 +23,7 @@ import engineering.lightning.wavelength.model.Status
 import engineering.lightning.wavelength.model.SweepWalletResult
 import engineering.lightning.wavelength.model.UnlockWalletResult
 import engineering.lightning.wavelength.wire.DepositRequest
+import engineering.lightning.wavelength.wire.DescriptorWalletStartRequest
 import engineering.lightning.wavelength.wire.ExitStatusRequest
 import engineering.lightning.wavelength.wire.ExitSummaryRequest
 import engineering.lightning.wavelength.wire.ExternalSeedWalletStartRequest
@@ -64,7 +66,7 @@ import engineering.lightning.wavelength.wire.SweepWalletRequest as WireSweepWall
  * [EmbeddedWavelengthClient] over a [FacadeBindings]: all of the SDK's
  * behaviour, independent of platform.
  *
- * - Start, stop, and external-seed starts run one at a time under a lifecycle
+ * - Start, stop, and atomic wallet starts run one at a time under a lifecycle
  *   mutex (the facade requires typed SDKs to serialise them).
  * - Blocking binding calls run on [dispatcher]; each open activity stream
  *   holds one of its threads while it waits for the next entry.
@@ -130,20 +132,54 @@ public class FacadeWavelengthClient(
             recoverState = request.recoverState.takeIf { it },
             recoveryWindow = request.recoveryWindow,
         )
-        val bytes = WireJson.encodeToString(ExternalSeedWalletStartRequest.serializer(), envelope).encodeToByteArray()
-        return lifecycleMutex.withLock {
+        return startAtomically(
+            encode(ExternalSeedWalletStartRequest.serializer(), envelope),
+            ExternalSeedWalletOpenResult.serializer(),
+            bindings::startExternalSeedWallet,
+        )
+    }
+
+    override suspend fun startDescriptorWallet(
+        config: RuntimeConfig,
+        request: DescriptorWalletRequest,
+    ): DescriptorWalletOpenResult {
+        config.validate()
+        request.validate()
+        if (config.dataDir.isNullOrBlank()) {
+            throw WavelengthException.InvalidConfig("startDescriptorWallet requires a final nonempty dataDir")
+        }
+        val envelope = DescriptorWalletStartRequest(
+            config = WireJson.encodeToJsonElement(MobileConfig.serializer(), config.toWire()),
+            descriptors = request.descriptors,
+            birthdayUnix = request.birthday?.epochSeconds,
+            expectedIdentityPubKey = request.expectedIdentityPubKey,
+            recoverState = request.recoverState.takeIf { it },
+            recoveryWindow = request.recoveryWindow,
+        )
+        return startAtomically(
+            encode(DescriptorWalletStartRequest.serializer(), envelope),
+            DescriptorWalletOpenResult.serializer(),
+            bindings::startDescriptorWallet,
+        )
+    }
+
+    /** Runs an atomic wallet start, always zeroing its secret-bearing [request]. */
+    private suspend fun <Res> startAtomically(
+        request: ByteArray,
+        response: DeserializationStrategy<Res>,
+        start: (ByteArray) -> ByteArray,
+    ): Res = lifecycleMutex.withLock {
+        try {
             if (bindings.isRunning()) {
                 throw WavelengthException.RuntimeActive("a wavelength runtime is already active; stop it first")
             }
-            val result = try {
-                transition(RuntimeLifecycle.STARTING) {
-                    blocking { bindings.startExternalSeedWallet(bytes) }
-                }
-            } finally {
-                bytes.fill(0)
+            val result = transition(RuntimeLifecycle.STARTING) {
+                blocking { start(request) }
             }
             _events.tryEmit(WavelengthEvent.RuntimeReady)
-            decode(ExternalSeedWalletOpenResult.serializer(), result)
+            decode(response, result)
+        } finally {
+            request.fill(0)
         }
     }
 

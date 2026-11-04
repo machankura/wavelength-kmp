@@ -4,6 +4,7 @@ import engineering.lightning.wavelength.model.ActivityList
 import engineering.lightning.wavelength.model.Balance
 import engineering.lightning.wavelength.model.CreateWalletResult
 import engineering.lightning.wavelength.model.DepositResult
+import engineering.lightning.wavelength.model.DescriptorWalletOpenResult
 import engineering.lightning.wavelength.model.Entry
 import engineering.lightning.wavelength.model.ExitResult
 import engineering.lightning.wavelength.model.ExitStatusResult
@@ -157,6 +158,20 @@ public interface ExternalSeedWalletClient : WavelengthClient {
 
 /** A client that can also work with a wallet's output descriptors. */
 public interface DescriptorWalletClient : WavelengthClient {
+    /**
+     * Boots the daemon at [RuntimeConfig.dataDir] (required: the final
+     * per-wallet directory) and imports or unlocks the wallet for
+     * [DescriptorWalletRequest.descriptors] in one step. On success the wallet
+     * is ready; no readiness poll is needed. The database password is derived
+     * from the keys, so reopen the wallet with this call, not [unlockWallet].
+     *
+     * @throws WavelengthException.RuntimeActive if a daemon is already running.
+     */
+    public suspend fun startDescriptorWallet(
+        config: RuntimeConfig,
+        request: DescriptorWalletRequest,
+    ): DescriptorWalletOpenResult
+
     /**
      * Returns the open wallet's `tr` and `wpkh` descriptors: public by default,
      * or private when [request] resupplies the wallet's mnemonic or root

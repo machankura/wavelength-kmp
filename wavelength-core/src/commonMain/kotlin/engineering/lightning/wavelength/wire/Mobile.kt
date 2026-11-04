@@ -65,6 +65,21 @@ internal data class ExternalSeedWalletStartRequest(
     @SerialName("recovery_window") val recoveryWindow: Long? = null,
 )
 
+/**
+ * The StartDescriptorWallet envelope (`descriptorWalletStartRequest` in
+ * sdk/wavewalletdk/mobile/descriptor_wallet.go). `config` is the nested final
+ * [MobileConfig]; the descriptors are as sensitive as a seed.
+ */
+@Serializable
+internal data class DescriptorWalletStartRequest(
+    @SerialName("config") val config: JsonElement,
+    @SerialName("descriptors") val descriptors: List<String>,
+    @SerialName("birthday_unix") val birthdayUnix: Long? = null,
+    @SerialName("expected_identity_pubkey") val expectedIdentityPubKey: String? = null,
+    @SerialName("recover_state") val recoverState: Boolean? = null,
+    @SerialName("recovery_window") val recoveryWindow: Long? = null,
+)
+
 /** Receive with the mobile-only binding deadline (`mobileReceiveRequest`). */
 @Serializable
 internal data class MobileReceiveRequest(

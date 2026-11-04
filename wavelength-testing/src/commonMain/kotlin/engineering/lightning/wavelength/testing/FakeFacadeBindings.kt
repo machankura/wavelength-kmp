@@ -7,6 +7,7 @@ import engineering.lightning.wavelength.FacadeSubscription
 import engineering.lightning.wavelength.FacadeVerb
 import engineering.lightning.wavelength.model.ActivityList
 import engineering.lightning.wavelength.model.Balance
+import engineering.lightning.wavelength.model.DescriptorWalletOpenResult
 import engineering.lightning.wavelength.model.CreateWalletResult
 import engineering.lightning.wavelength.model.DepositResult
 import engineering.lightning.wavelength.model.Entry
@@ -178,6 +179,31 @@ public class FakeFacadeBindings(
         running = true
         walletState = WalletState.READY
         encode(ExternalSeedWalletOpenResult.serializer(), ExternalSeedWalletOpenResult(imported = imported, identityPubKey = identityPubKey))
+    }
+
+    override fun startDescriptorWallet(request: ByteArray): ByteArray = synchronized(lock) {
+        val body = request.decodeToString()
+        record("startDescriptorWallet", body)
+        check(!running) { "wavewalletdk mobile already started" }
+        val obj = json.parseToJsonElement(body).jsonObject
+        val pinned = obj.string("expected_identity_pubkey")
+        if (pinned != null && pinned != identityPubKey) {
+            error("descriptor wallet identity mismatch: expected $pinned, wallet has $identityPubKey")
+        }
+        lastConfigJson = obj["config"].toString()
+        val imported = walletState == WalletState.NONE
+        running = true
+        walletState = WalletState.READY
+        encode(
+            DescriptorWalletOpenResult.serializer(),
+            DescriptorWalletOpenResult(
+                imported = imported,
+                identityPubKey = identityPubKey,
+                rootFingerprint = rootFingerprint,
+                descriptors = publicDescriptors,
+                recoveryRan = obj.bool("recover_state"),
+            ),
+        )
     }
 
     override fun stop() {

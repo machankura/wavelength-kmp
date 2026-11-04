@@ -320,6 +320,100 @@ class FacadeWavelengthClientTest {
     }
 
     @Test
+    fun descriptorStartIsAtomicAndPinsTheEnvelope() = realTimeTest {
+        val request = DescriptorWalletRequest(
+            descriptors = listOf("tr([d34db33f/86h/0h/0h]tprv1/<0;1>/*)#aaa"),
+            birthday = Instant.fromEpochSeconds(1_767_225_600, 999_000_000),
+            expectedIdentityPubKey = bindings.identityPubKey,
+            recoverState = true,
+            recoveryWindow = 2500,
+        )
+        val result = client.startDescriptorWallet(config, request)
+        assertTrue(result.imported)
+        assertEquals(bindings.rootFingerprint, result.rootFingerprint)
+        assertEquals(bindings.publicDescriptors, result.descriptors)
+        assertTrue(client.walletReady())
+        assertEquals(listOf("startDescriptorWallet"), bindings.requests.map { it.first }.filter { it != "walletReady" })
+        assertEquals(
+            """{"config":{"data_dir":"/tmp/w","network":"regtest","server_transport":"grpc","wallet_type":"lwwallet",""" +
+                """"swap_server_transport":"grpc"},"descriptors":["tr([d34db33f/86h/0h/0h]tprv1/<0;1>/*)#aaa"],""" +
+                """"birthday_unix":1767225600,"expected_identity_pubkey":"${bindings.identityPubKey}",""" +
+                """"recover_state":true,"recovery_window":2500}""",
+            bindings.requests.first().second,
+        )
+    }
+
+    @Test
+    fun descriptorStartIsRefusedWhileRunning() = realTimeTest {
+        client.start(config)
+        assertFailsWith<WavelengthException.RuntimeActive> {
+            client.startDescriptorWallet(config, DescriptorWalletRequest(listOf("tr(tprv1)")))
+        }
+        assertEquals(0, bindings.requests.count { it.first == "startDescriptorWallet" })
+    }
+
+    @Test
+    fun descriptorStartValidation() = realTimeTest {
+        val descriptors = listOf("tr(tprv1)")
+        listOf(
+            DescriptorWalletRequest(emptyList()),
+            DescriptorWalletRequest(listOf(" ")),
+            DescriptorWalletRequest(descriptors, birthday = Instant.fromEpochSeconds(-1)),
+            DescriptorWalletRequest(descriptors, expectedIdentityPubKey = ""),
+            DescriptorWalletRequest(descriptors, recoveryWindow = -1),
+            DescriptorWalletRequest(descriptors, recoveryWindow = 0x1_0000_0000),
+        ).forEach {
+            assertFailsWith<WavelengthException.InvalidDescriptor>("$it") { client.startDescriptorWallet(config, it) }
+        }
+        assertFailsWith<WavelengthException.InvalidConfig> {
+            client.startDescriptorWallet(config.copy(dataDir = null), DescriptorWalletRequest(descriptors))
+        }
+        assertTrue(bindings.requests.isEmpty())
+        assertEquals(RuntimeLifecycle.STOPPED, client.lifecycle.value)
+    }
+
+    @Test
+    fun descriptorStartZeroesItsRequestEvenOnFailure() = realTimeTest {
+        val seen = mutableListOf<ByteArray>()
+        val spying = object : FacadeBindings by bindings {
+            override fun startDescriptorWallet(request: ByteArray): ByteArray {
+                seen += request
+                return bindings.startDescriptorWallet(request)
+            }
+        }
+        val spied = FacadeWavelengthClient(spying, Dispatchers.Default)
+        val request = DescriptorWalletRequest(listOf("tr(tprv1)"))
+
+        spied.startDescriptorWallet(config, request)
+        spied.stop()
+        bindings.failNext("startDescriptorWallet", "invalid descriptors: bad key")
+        assertFailsWith<WavelengthException.InvalidDescriptor> { spied.startDescriptorWallet(config, request) }
+
+        assertEquals(2, seen.size)
+        seen.forEach { bytes -> assertTrue(bytes.all { it == 0.toByte() }) }
+        assertEquals(RuntimeLifecycle.STOPPED, spied.lifecycle.value)
+    }
+
+    @Test
+    fun descriptorStartEmitsRuntimeReadyAndCanReopen() = realTimeTest {
+        val request = DescriptorWalletRequest(listOf("tr(tprv1)"))
+        val ready = async(start = CoroutineStart.UNDISPATCHED) { client.events.first { it == WavelengthEvent.RuntimeReady } }
+        yield()
+        assertTrue(client.startDescriptorWallet(config, request).imported)
+        withTimeout(5.seconds) { ready.await() }
+        client.stop()
+        assertFalse(client.startDescriptorWallet(config, request).imported)
+        assertEquals(RuntimeLifecycle.RUNNING, client.lifecycle.value)
+    }
+
+    @Test
+    fun descriptorRequestHidesItsKeys() {
+        val text = DescriptorWalletRequest(listOf("tr(tprvSECRET)")).toString()
+        assertFalse("tprvSECRET" in text, text)
+        assertTrue("descriptors=<1>" in text, text)
+    }
+
+    @Test
     fun createWalletRequestHidesItsKeys() {
         val text = CreateWalletRequest("hunter2hunter2", descriptors = listOf("tr(tprvSECRET)")).toString()
         assertFalse("tprvSECRET" in text || "hunter2" in text, text)

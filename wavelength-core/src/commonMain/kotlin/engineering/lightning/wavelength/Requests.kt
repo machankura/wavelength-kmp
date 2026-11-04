@@ -62,7 +62,7 @@ public class CreateWalletRequest(
             throw WavelengthException.InvalidDescriptor("descriptors cannot be combined with a mnemonic or seedPassphrase")
         }
         requireDescriptors(descriptors)
-        requireBirthday(birthday, WavelengthException::InvalidDescriptor)
+        requireImportOptions(birthday, null, recoveryWindow, WavelengthException::InvalidDescriptor)
     }
 
     override fun toString(): String =
@@ -112,9 +112,21 @@ private fun requireDescriptors(descriptors: List<String>) {
     }
 }
 
-private fun requireBirthday(birthday: Instant?, invalid: (String, Throwable?) -> WavelengthException) {
+// The options a wallet opened from imported keys shares across its lifecycles.
+private fun requireImportOptions(
+    birthday: Instant?,
+    expectedIdentityPubKey: String?,
+    recoveryWindow: Long?,
+    invalid: (String, Throwable?) -> WavelengthException,
+) {
     if (birthday != null && birthday.epochSeconds < 0) {
         throw invalid("birthday must be at or after the Unix epoch", null)
+    }
+    if (expectedIdentityPubKey != null && expectedIdentityPubKey.isEmpty()) {
+        throw invalid("expectedIdentityPubKey must be nonempty when set", null)
+    }
+    if (recoveryWindow != null && recoveryWindow !in 0..0xFFFF_FFFFL) {
+        throw invalid("recoveryWindow must fit in uint32", null)
     }
 }
 
@@ -148,6 +160,37 @@ public class ExternalSeedWalletRequest(
         /** aezeed entropy size. */
         public const val ENTROPY_SIZE: Int = 16
     }
+}
+
+/**
+ * Material for [DescriptorWalletClient.startDescriptorWallet]. The host keeps it
+ * and supplies it on every open, because the wallet's database password is
+ * derived from these keys and no password can reopen the wallet alone.
+ */
+public class DescriptorWalletRequest(
+    /** Private output descriptors, as sensitive as a seed. See [CreateWalletRequest.descriptors]. */
+    public val descriptors: List<String>,
+    /** The earliest time the keys may have received funds. Null scans from genesis. */
+    public val birthday: Instant? = null,
+    /**
+     * Pins the wallet identity persisted after first use; a mismatch fails. The
+     * daemon also always checks the wallet against the identity the descriptors
+     * derive.
+     */
+    public val expectedIdentityPubKey: String? = null,
+    /** Runs the (idempotent) recovery scan on this start. */
+    public val recoverState: Boolean = false,
+    public val recoveryWindow: Long? = null,
+) {
+    /** @throws WavelengthException.InvalidDescriptor */
+    public fun validate() {
+        requireDescriptors(descriptors)
+        requireImportOptions(birthday, expectedIdentityPubKey, recoveryWindow, WavelengthException::InvalidDescriptor)
+    }
+
+    override fun toString(): String =
+        "DescriptorWalletRequest(descriptors=<${descriptors.size}>, birthday=$birthday, " +
+            "expectedIdentityPubKey=$expectedIdentityPubKey, recoverState=$recoverState)"
 }
 
 /**

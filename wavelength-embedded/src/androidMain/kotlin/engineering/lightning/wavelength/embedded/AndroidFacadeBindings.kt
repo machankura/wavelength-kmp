@@ -13,6 +13,9 @@ internal object AndroidFacadeBindings : FacadeBindings {
     override fun startExternalSeedWallet(request: ByteArray): ByteArray =
         Mobile.startExternalSeedWallet(request).orEmpty()
 
+    override fun startDescriptorWallet(request: ByteArray): ByteArray =
+        Mobile.startDescriptorWallet(request).orEmpty()
+
     override fun stop(): Unit = Mobile.stop()
 
     override fun isRunning(): Boolean = Mobile.isRunning()

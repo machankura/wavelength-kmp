@@ -21,6 +21,7 @@ import engineering.lightning.wavewalletdk.cinterop.MobilePrepareSend
 import engineering.lightning.wavewalletdk.cinterop.MobileReceive
 import engineering.lightning.wavewalletdk.cinterop.MobileSendPrepared
 import engineering.lightning.wavewalletdk.cinterop.MobileStart
+import engineering.lightning.wavewalletdk.cinterop.MobileStartDescriptorWallet
 import engineering.lightning.wavewalletdk.cinterop.MobileStartExternalSeedWallet
 import engineering.lightning.wavewalletdk.cinterop.MobileStatus
 import engineering.lightning.wavewalletdk.cinterop.MobileStop
@@ -59,6 +60,9 @@ internal object IosFacadeBindings : FacadeBindings {
 
     override fun startExternalSeedWallet(request: ByteArray): ByteArray =
         goCall { err -> MobileStartExternalSeedWallet(request.toNSData(), err) }.toByteArray()
+
+    override fun startDescriptorWallet(request: ByteArray): ByteArray =
+        goCall { err -> MobileStartDescriptorWallet(request.toNSData(), err) }.toByteArray()
 
     override fun stop() {
         goCall { err -> MobileStop(err) }.requireTrue("MobileStop")
