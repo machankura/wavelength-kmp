@@ -35,6 +35,25 @@ class WalletProfilesTest {
     }
 
     @Test
+    fun descriptorAndWatchOnlyKindsPersist() = runTest {
+        val store = InMemoryWalletProfileStore()
+        val profiles = WalletProfiles(store, "/data/wavelength")
+        profiles.create("Imported", Network.SIGNET, WalletKind.DESCRIPTOR)
+        profiles.create("Signer", Network.SIGNET, WalletKind.WATCH_ONLY)
+        assertEquals(
+            listOf(WalletKind.DESCRIPTOR, WalletKind.WATCH_ONLY),
+            WalletProfiles(store, "/data/wavelength").list().map { it.kind },
+        )
+    }
+
+    @Test
+    fun aProfileStoredBeforeTheNewKindsStillDecodes() = runTest {
+        val stored = """[{"id":"a","name":"Old","network":"signet","kind":"EXTERNAL_SEED","dataDir":"/d/a"}]"""
+        val profile = WalletProfiles(InMemoryWalletProfileStore(stored), "/d").list().single()
+        assertEquals(WalletKind.EXTERNAL_SEED, profile.kind)
+    }
+
+    @Test
     fun relativeRootIsRejected() {
         assertFailsWith<WavelengthException.InvalidArgument> { WalletProfiles(InMemoryWalletProfileStore(), "wavelength") }
     }

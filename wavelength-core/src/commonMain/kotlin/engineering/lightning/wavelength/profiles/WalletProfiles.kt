@@ -24,12 +24,30 @@ public enum class WalletKind {
 
     /** startExternalSeedWallet with host-derived entropy. */
     EXTERNAL_SEED,
+
+    /**
+     * A wallet from private output descriptors. Made through createWallet, it
+     * reopens with the password alone. Opened through startDescriptorWallet, its
+     * password is derived from the keys, so the host must keep the descriptors
+     * and pass them on every open.
+     */
+    DESCRIPTOR,
+
+    /**
+     * A wallet whose fund keys live on a remote signer. Made through createWallet,
+     * it reopens with the password alone. Opened through startWatchOnlyWallet, the
+     * host must keep the bundle or manifest and the password, and pass them on
+     * every open. Either way, it opens only while the signer answers.
+     */
+    WATCH_ONLY,
 }
 
 /**
  * One wallet on this device. Each has its own daemon data directory; only one
  * runs at a time (the daemon is a per-process singleton). Nothing here is
- * secret: credential ids and identity keys are public.
+ * secret: credential ids and identity keys are public. Passwords, descriptors,
+ * bundles and authentication keys belong in the Android Keystore or iOS
+ * Keychain, which the host owns.
  */
 @Serializable
 public data class WalletProfile(

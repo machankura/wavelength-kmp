@@ -53,6 +53,10 @@ public sealed class WavelengthException(
     public class RemoteSignerFailed(message: String, cause: Throwable? = null) :
         WavelengthException("remote_signer_failed", message, cause)
 
+    /** This client cannot do what was asked, for example a custom client with no descriptor export. */
+    public class UnsupportedFacadeMethod(message: String, cause: Throwable? = null) :
+        WavelengthException("unsupported_facade_method", message, cause)
+
     /** An argument was rejected before reaching the daemon. */
     public class InvalidArgument(message: String, cause: Throwable? = null) :
         WavelengthException("invalid_argument", message, cause)

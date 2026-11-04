@@ -1,11 +1,13 @@
 package engineering.lightning.wavelength.engine
 
 import engineering.lightning.wavelength.CreateWalletRequest
+import engineering.lightning.wavelength.DescriptorWalletClient
 import engineering.lightning.wavelength.ExitBatchEvent
 import engineering.lightning.wavelength.ExitBatchOptions
 import engineering.lightning.wavelength.ExitBatchResult
 import engineering.lightning.wavelength.ExitRequest
 import engineering.lightning.wavelength.ListRequest
+import engineering.lightning.wavelength.ListWalletDescriptorsRequest
 import engineering.lightning.wavelength.LogLevel
 import engineering.lightning.wavelength.ReceiveRequest
 import engineering.lightning.wavelength.RuntimeConfig
@@ -26,11 +28,13 @@ import engineering.lightning.wavelength.model.GetExitPlanResult
 import engineering.lightning.wavelength.model.Info
 import engineering.lightning.wavelength.model.ListResult
 import engineering.lightning.wavelength.model.ListView
+import engineering.lightning.wavelength.model.ListWalletDescriptorsResult
 import engineering.lightning.wavelength.model.OpenWalletResult
 import engineering.lightning.wavelength.model.PrepareSendResult
 import engineering.lightning.wavelength.model.ReceiveResult
 import engineering.lightning.wavelength.model.SweepWalletResult
 import engineering.lightning.wavelength.model.UnlockWalletResult
+import engineering.lightning.wavelength.model.WalletState
 import engineering.lightning.wavelength.walletReady
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.atomicfu.locks.SynchronizedObject
@@ -202,22 +206,49 @@ public class WalletEngine(
 
     // --- wallet setup --------------------------------------------------------------
 
+    /**
+     * Creates a wallet. If it fails having left a database behind, as a
+     * watch-only wallet does when its signer holds other keys, the phase moves to
+     * LOCKED: retry with [unlockWallet]. A signer that could not be reached leaves
+     * no database, so the phase stays and creating again works.
+     */
     public suspend fun createWallet(request: CreateWalletRequest): CreateWalletResult {
         checkOpen()
-        val result = client.createWallet(request)
+        val result = try {
+            client.createWallet(request)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            followLockedWallet(readInfoOrNull())
+            throw e
+        }
         adoptInfo()
         kickRefresh()
         return result
     }
 
     /**
-     * Restores from [request]'s mnemonic and returns once the wallet is
-     * usable. With `recoverState`, the recovery scan continues in the
-     * background; follow it in [WalletSnapshot.recovery].
+     * Restores from [request]'s mnemonic, descriptors, or watch-only bundle or
+     * manifest, and returns once the wallet is usable. With `recoverState`, the
+     * recovery scan continues in the background; follow it in
+     * [WalletSnapshot.recovery]. A failure that leaves a database behind moves the
+     * phase to LOCKED, as in [createWallet].
+     *
+     * @throws WavelengthException.InvalidArgument unless exactly one source is set.
      */
     public suspend fun restoreWallet(request: CreateWalletRequest): Info {
         checkOpen()
-        if (request.mnemonic.isEmpty()) throw WavelengthException.InvalidArgument("a restore needs a mnemonic")
+        val sources = listOf(
+            request.mnemonic.isNotEmpty(),
+            request.descriptors.isNotEmpty(),
+            request.watchOnlyBundle != null,
+            request.watchOnlyManifest != null,
+        ).count { it }
+        if (sources != 1) {
+            throw WavelengthException.InvalidArgument(
+                "a restore needs exactly one of a mnemonic, descriptors, or a watch-only bundle or manifest",
+            )
+        }
         val deferred = synchronized(lock) {
             check(restore?.isCompleted != false) { "a restore is already in flight" }
             CompletableDeferred<Info>().also { restore = it }
@@ -237,13 +268,7 @@ public class WalletEngine(
                 throw e
             } catch (e: Exception) {
                 if (closed) return@launch
-                val probe = try {
-                    client.getInfo()
-                } catch (e2: CancellationException) {
-                    throw e2
-                } catch (_: Exception) {
-                    null
-                }
+                val probe = readInfoOrNull()
                 if (probe != null && probe.walletReady) {
                     dispatch(EngineEvent.RestoreFailedWalletUp) {
                         it.copy(
@@ -257,6 +282,7 @@ public class WalletEngine(
                     dispatch(EngineEvent.RestoreFailedWalletDown) {
                         it.copy(recovery = RecoveryState.Failed(e, walletUsable = false))
                     }
+                    followLockedWallet(probe)
                     rejectRestore(e)
                 }
             }
@@ -267,6 +293,23 @@ public class WalletEngine(
     /** Clears a finished or failed [WalletSnapshot.recovery] (a running one stays). */
     public fun acknowledgeRecovery() {
         update { if (it.recovery == RecoveryState.Restoring) it else it.copy(recovery = RecoveryState.Idle) }
+    }
+
+    /**
+     * Returns the open wallet's `tr` and `wpkh` descriptors: public by default,
+     * or private when [request] resupplies the wallet's mnemonic or root
+     * descriptors. The engine keeps no copy.
+     *
+     * @throws WavelengthException.UnsupportedFacadeMethod if [client] is not a
+     *   [DescriptorWalletClient].
+     */
+    public suspend fun listWalletDescriptors(
+        request: ListWalletDescriptorsRequest = ListWalletDescriptorsRequest(),
+    ): ListWalletDescriptorsResult {
+        checkOpen()
+        val descriptorClient = client as? DescriptorWalletClient
+            ?: throw WavelengthException.UnsupportedFacadeMethod("this client cannot list wallet descriptors")
+        return descriptorClient.listWalletDescriptors(request)
     }
 
     public suspend fun unlockWallet(password: ByteArray): UnlockWalletResult {
@@ -413,6 +456,21 @@ public class WalletEngine(
             )
         }
         return stable
+    }
+
+    private suspend fun readInfoOrNull(): Info? = try {
+        client.getInfo()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
+    }
+
+    /** Moves to LOCKED when a failed open left a database that only unlock can open. */
+    private fun followLockedWallet(info: Info?) {
+        if (info?.walletState == WalletState.LOCKED && !closed) {
+            dispatch(EngineEvent.InfoReceived(info)) { it.copy(info = info) }
+        }
     }
 
     private suspend fun adoptInfo(): Info? {

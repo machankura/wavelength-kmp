@@ -17,25 +17,39 @@ import kotlinx.coroutines.launch
  *
  * wavelength's gomobile docs require this: a daemon left running while the OS
  * suspends the process keeps external gRPC connections on stale network
- * paths, and the Go side cannot see the app lifecycle. After the restart the
- * wallet is locked again, so collect [restarts] and unlock it.
+ * paths, and the Go side cannot see the app lifecycle. After the restart a
+ * password wallet is locked again, so collect [restarts] and unlock it.
+ *
+ * A wallet opened through an atomic verb cannot be unlocked that way: a
+ * descriptor wallet's password is derived from its keys, which the host holds.
+ * Build the policy with [reopening] for those, passing that verb.
+ *
+ * A watch-only wallet opens only while its signer answers, so a restart or the
+ * unlock after it can fail with [WavelengthException.RemoteSignerFailed]. That
+ * is not a wrong password: show it and offer a retry.
  *
  * The trade-off: nothing is processed while the app is in the background.
  * Platform hooks: `bindToProcessLifecycle()` on Android; on iOS, call
  * [onBackground] and [onForeground] from your scene phase handler.
  */
-public class BackgroundRestartPolicy(
+public class BackgroundRestartPolicy private constructor(
     private val client: WavelengthClient,
     private val scope: CoroutineScope,
-    /** The config to restart with (normally the one the app started with). */
-    private val config: () -> RuntimeConfig,
+    private val reopen: suspend () -> Info,
 ) {
+    /** Restarts the daemon with [config] (normally the one the app started with). */
+    public constructor(
+        client: WavelengthClient,
+        scope: CoroutineScope,
+        config: () -> RuntimeConfig,
+    ) : this(client, scope, reopen = { client.start(config()) })
+
     private var restartPending = false
     private var pending: Job? = null
 
     private val _restarts = MutableSharedFlow<Result<Info>>(extraBufferCapacity = 4)
 
-    /** Each restart's info (wallet typically LOCKED) or failure. */
+    /** Each restart's info (a password wallet is typically LOCKED) or failure. */
     public val restarts: SharedFlow<Result<Info>> = _restarts.asSharedFlow()
 
     /** The app moved to the background. */
@@ -57,11 +71,23 @@ public class BackgroundRestartPolicy(
         pending = scope.launch {
             previous?.join()
             val result = try {
-                Result.success(client.start(config()))
+                Result.success(reopen())
             } catch (e: WavelengthException) {
                 Result.failure(e)
             }
             _restarts.emit(result)
         }
+    }
+
+    public companion object {
+        /**
+         * A policy that returns to the foreground by calling [reopen] instead of
+         * starting the daemon, for a wallet opened through an atomic verb.
+         */
+        public fun reopening(
+            client: WavelengthClient,
+            scope: CoroutineScope,
+            reopen: suspend () -> Info,
+        ): BackgroundRestartPolicy = BackgroundRestartPolicy(client, scope, reopen = reopen)
     }
 }

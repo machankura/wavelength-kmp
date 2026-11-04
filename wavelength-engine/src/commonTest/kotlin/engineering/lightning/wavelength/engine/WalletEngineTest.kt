@@ -1,10 +1,15 @@
 package engineering.lightning.wavelength.engine
 
 import engineering.lightning.wavelength.CreateWalletRequest
+import engineering.lightning.wavelength.DescriptorWalletRequest
+import engineering.lightning.wavelength.ListWalletDescriptorsRequest
 import engineering.lightning.wavelength.Network
 import engineering.lightning.wavelength.ReceiveRequest
 import engineering.lightning.wavelength.RuntimeConfig
+import engineering.lightning.wavelength.RemoteSignerConfig
 import engineering.lightning.wavelength.SendRequest
+import engineering.lightning.wavelength.WavelengthClient
+import engineering.lightning.wavelength.WavelengthException
 import engineering.lightning.wavelength.model.EntryStatus
 import engineering.lightning.wavelength.model.WalletState
 import engineering.lightning.wavelength.testing.FakeFacadeBindings
@@ -198,6 +203,118 @@ class WalletEngineTest {
         assertIs<RecoveryState.Done>(engine.snapshot.value.recovery)
         engine.acknowledgeRecovery()
         assertEquals(RecoveryState.Idle, engine.snapshot.value.recovery)
+    }
+
+    @Test
+    fun restoresFromDescriptors() = runTest {
+        val (engine, bindings) = engine()
+        engine.start()
+        val restored = async {
+            engine.restoreWallet(CreateWalletRequest(password, descriptors = listOf("tr(tprv1)"), recoverState = true))
+        }
+        runCurrent()
+        assertEquals(WalletState.READY, restored.await().walletState)
+        assertEquals(RuntimePhase.READY, engine.phase())
+        assertIs<RecoveryState.Done>(engine.snapshot.value.recovery)
+        assertEquals(1, bindings.requests.count { it.first == "createWallet" && "Descriptors" in it.second })
+    }
+
+    @Test
+    fun restoresWatchOnlyAndCarriesTheManifestHash() = runTest {
+        val bindings = FakeFacadeBindings()
+        val signed = config.copy(remoteSigner = RemoteSignerConfig("host:1", "/m", "/c"))
+        val engine = WalletEngine(FakeWavelengthClient(bindings), backgroundScope, signed)
+        engine.start()
+        val restored = async {
+            engine.restoreWallet(CreateWalletRequest(password, watchOnlyManifest = "{}", authKeys = "keys"))
+        }
+        runCurrent()
+        assertEquals(WalletState.READY, restored.await().walletState)
+        assertEquals(bindings.fakeManifestHash, engine.snapshot.value.info?.manifestHash)
+    }
+
+    @Test
+    fun aRestoreNeedsExactlyOneSource() = runTest {
+        val (engine, bindings) = engine()
+        engine.start()
+        listOf(
+            CreateWalletRequest(password),
+            CreateWalletRequest(password, recoverState = true),
+            CreateWalletRequest(password, mnemonic = listOf("w"), descriptors = listOf("tr(tprv1)")),
+            CreateWalletRequest(password, descriptors = listOf("tr(tprv1)"), watchOnlyBundle = "b"),
+            CreateWalletRequest(password, watchOnlyBundle = "b", watchOnlyManifest = "m", authKeys = "k"),
+        ).forEach {
+            assertFailsWith<WavelengthException.InvalidArgument>("$it") { engine.restoreWallet(it) }
+        }
+        assertEquals(RuntimePhase.NEEDS_WALLET, engine.phase())
+        assertEquals(0, bindings.requests.count { it.first == "createWallet" })
+    }
+
+    @Test
+    fun aRestoreLeavingALockedWalletMovesToLocked() = runTest {
+        val bindings = FakeFacadeBindings()
+        val signed = config.copy(remoteSigner = RemoteSignerConfig("host:1", "/m", "/c"))
+        val engine = WalletEngine(FakeWavelengthClient(bindings), backgroundScope, signed)
+        engine.start()
+        bindings.setWalletState(WalletState.LOCKED)
+        bindings.failNext("createWallet", "verify remote signer: remote signer does not hold this wallet's keys")
+        assertFailsWith<WavelengthException.RemoteSignerFailed> {
+            engine.restoreWallet(CreateWalletRequest(password, watchOnlyBundle = "b"))
+        }
+        assertEquals(RuntimePhase.LOCKED, engine.phase())
+        assertEquals(false, assertIs<RecoveryState.Failed>(engine.snapshot.value.recovery).walletUsable)
+    }
+
+    @Test
+    fun aCreateLeavingALockedWalletMovesToLocked() = runTest {
+        val (engine, bindings) = engine()
+        engine.start()
+        bindings.setWalletState(WalletState.LOCKED)
+        bindings.failNext("createWallet", "signer does not hold the key for a wallet slot: [0]")
+        assertFailsWith<WavelengthException.RemoteSignerFailed> {
+            engine.createWallet(CreateWalletRequest(password, watchOnlyBundle = "b"))
+        }
+        assertEquals(RuntimePhase.LOCKED, engine.phase())
+    }
+
+    @Test
+    fun aCreateLeavingNoWalletStaysOnNeedsWallet() = runTest {
+        val (engine, bindings) = engine()
+        engine.start()
+        bindings.failNext("createWallet", "connect to remote signer: refused")
+        assertFailsWith<WavelengthException.RemoteSignerFailed> {
+            engine.createWallet(CreateWalletRequest(password, watchOnlyBundle = "b"))
+        }
+        assertEquals(RuntimePhase.NEEDS_WALLET, engine.phase())
+    }
+
+    @Test
+    fun aWalletOpenedAtomicallyIsAdoptedByStart() = runTest {
+        val client = FakeWavelengthClient()
+        client.startDescriptorWallet(config, DescriptorWalletRequest(listOf("tr(tprv1)")))
+        val engine = WalletEngine(client, backgroundScope, config)
+        engine.start()
+        runCurrent()
+        assertEquals(RuntimePhase.READY, engine.phase())
+    }
+
+    @Test
+    fun exportsDescriptorsAndKeepsNoCopy() = runTest {
+        val (engine, bindings) = engine()
+        engine.start()
+        engine.createWallet(CreateWalletRequest(password))
+        val before = engine.snapshot.value.toString()
+        assertEquals(bindings.publicDescriptors, engine.listWalletDescriptors().descriptors)
+        val secret = engine.listWalletDescriptors(ListWalletDescriptorsRequest(includePrivate = true, descriptors = listOf("tr(tprv1)")))
+        assertTrue(secret.includesPrivate)
+        assertEquals(before, engine.snapshot.value.toString())
+    }
+
+    @Test
+    fun exportNeedsADescriptorClient() = runTest {
+        val plain = object : WavelengthClient by FakeWavelengthClient() {}
+        val engine = WalletEngine(plain, backgroundScope, config)
+        assertFailsWith<WavelengthException.UnsupportedFacadeMethod> { engine.listWalletDescriptors() }
     }
 
     @Test
