@@ -34,6 +34,7 @@ internal object AndroidFacadeBindings : FacadeBindings {
         FacadeVerb.EXIT_SUMMARY -> Mobile.exitSummary(request)
         FacadeVerb.GET_EXIT_PLAN -> Mobile.getExitPlan(request)
         FacadeVerb.SWEEP_WALLET -> Mobile.sweepWallet(request)
+        FacadeVerb.LIST_WALLET_DESCRIPTORS -> Mobile.listWalletDescriptors(request)
     }.orEmpty()
 
     override fun subscribe(request: ByteArray): FacadeSubscription = AndroidSubscription(Mobile.subscribe(request))

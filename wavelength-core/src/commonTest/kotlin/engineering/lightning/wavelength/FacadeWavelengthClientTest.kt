@@ -13,6 +13,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -277,6 +278,92 @@ class FacadeWavelengthClientTest {
         assertFailsWith<WavelengthException.InvalidConfig> {
             client.startExternalSeedWallet(config.copy(dataDir = null), ExternalSeedWalletRequest(ByteArray(16)))
         }
+    }
+
+    @Test
+    fun descriptorRestoreSendsTheDescriptorsAndBirthday() = realTimeTest {
+        client.start(config)
+        val descriptors = listOf("tr(tprv1/86h/0h/0h/<0;1>/*)#aaa", "wpkh(tprv1/84h/0h/0h/<0;1>/*)#bbb")
+        val result = client.restoreWalletFromDescriptors(
+            "password1".encodeToByteArray(),
+            descriptors,
+            Instant.fromEpochSeconds(1_767_225_600),
+            recoveryWindow = 2500,
+        )
+        assertEquals(bindings.rootFingerprint, result.rootFingerprint)
+        assertEquals(bindings.publicDescriptors, result.descriptors)
+        assertEquals(emptyList(), result.mnemonic)
+        assertEquals(
+            """{"WalletPassword":"${Base64.encode("password1".encodeToByteArray())}","RecoverState":true,"RecoveryWindow":2500,""" +
+                """"Descriptors":["tr(tprv1/86h/0h/0h/<0;1>/*)#aaa","wpkh(tprv1/84h/0h/0h/<0;1>/*)#bbb"],""" +
+                """"Birthday":"2026-01-01T00:00:00Z"}""",
+            bindings.requests.last { it.first == "createWallet" }.second,
+        )
+    }
+
+    @Test
+    fun descriptorCreateValidation() = realTimeTest {
+        val descriptors = listOf("tr(tprv1/86h/0h/0h/<0;1>/*)")
+        client.start(config)
+        listOf(
+            CreateWalletRequest("password1", mnemonic = listOf("word"), descriptors = descriptors),
+            CreateWalletRequest("password1", seedPassphrase = "pass", descriptors = descriptors),
+            CreateWalletRequest("password1", descriptors = listOf(" ")),
+            CreateWalletRequest("password1", descriptors = descriptors, birthday = Instant.fromEpochSeconds(-1)),
+        ).forEach {
+            assertFailsWith<WavelengthException.InvalidDescriptor>("$it") { client.createWallet(it) }
+        }
+        assertFailsWith<WavelengthException.InvalidDescriptor> {
+            client.restoreWalletFromDescriptors("password1".encodeToByteArray(), emptyList())
+        }
+        assertEquals(0, bindings.requests.count { it.first == "createWallet" })
+    }
+
+    @Test
+    fun createWalletRequestHidesItsKeys() {
+        val text = CreateWalletRequest("hunter2hunter2", descriptors = listOf("tr(tprvSECRET)")).toString()
+        assertFalse("tprvSECRET" in text || "hunter2" in text, text)
+        assertTrue("descriptors=<1>" in text, text)
+    }
+
+    @Test
+    fun exportsPublicDescriptorsByDefault() = realTimeTest {
+        readyWallet()
+        val result = client.listWalletDescriptors()
+        assertEquals(bindings.publicDescriptors, result.descriptors)
+        assertEquals(bindings.rootFingerprint, result.rootFingerprint)
+        assertFalse(result.includesPrivate)
+        assertEquals("{}", bindings.requests.last { it.first == "listWalletDescriptors" }.second)
+    }
+
+    @Test
+    fun privateExportSendsItsCredentials() = realTimeTest {
+        readyWallet()
+        val result = client.listWalletDescriptors(
+            ListWalletDescriptorsRequest(includePrivate = true, descriptors = listOf("tr(tprv1)")),
+        )
+        assertTrue(result.includesPrivate)
+        assertEquals(
+            """{"IncludePrivate":true,"Descriptors":["tr(tprv1)"]}""",
+            bindings.requests.last { it.first == "listWalletDescriptors" }.second,
+        )
+    }
+
+    @Test
+    fun exportValidation() = realTimeTest {
+        readyWallet()
+        val mnemonic = listOf("word")
+        val descriptors = listOf("tr(tprv1)")
+        listOf(
+            ListWalletDescriptorsRequest(includePrivate = true),
+            ListWalletDescriptorsRequest(mnemonic = mnemonic),
+            ListWalletDescriptorsRequest(descriptors = descriptors),
+            ListWalletDescriptorsRequest(includePrivate = true, mnemonic = mnemonic, descriptors = descriptors),
+            ListWalletDescriptorsRequest(includePrivate = true, seedPassphrase = ByteArray(1), descriptors = descriptors),
+        ).forEach {
+            assertFailsWith<WavelengthException.InvalidDescriptor>("$it") { client.listWalletDescriptors(it) }
+        }
+        assertEquals(0, bindings.requests.count { it.first == "listWalletDescriptors" })
     }
 
     @Test

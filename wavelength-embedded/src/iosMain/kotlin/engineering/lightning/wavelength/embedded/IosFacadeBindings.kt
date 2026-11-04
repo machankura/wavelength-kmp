@@ -14,6 +14,7 @@ import engineering.lightning.wavewalletdk.cinterop.MobileGetExitPlan
 import engineering.lightning.wavewalletdk.cinterop.MobileGetInfo
 import engineering.lightning.wavewalletdk.cinterop.MobileIsRunning
 import engineering.lightning.wavewalletdk.cinterop.MobileList
+import engineering.lightning.wavewalletdk.cinterop.MobileListWalletDescriptors
 import engineering.lightning.wavewalletdk.cinterop.MobileOpenWalletFromPasskey
 import engineering.lightning.wavewalletdk.cinterop.MobilePendingInboundSat
 import engineering.lightning.wavewalletdk.cinterop.MobilePrepareSend
@@ -85,6 +86,7 @@ internal object IosFacadeBindings : FacadeBindings {
                 FacadeVerb.EXIT_SUMMARY -> MobileExitSummary(req, err)
                 FacadeVerb.GET_EXIT_PLAN -> MobileGetExitPlan(req, err)
                 FacadeVerb.SWEEP_WALLET -> MobileSweepWallet(req, err)
+                FacadeVerb.LIST_WALLET_DESCRIPTORS -> MobileListWalletDescriptors(req, err)
             }
         }.toByteArray()
     }

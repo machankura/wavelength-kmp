@@ -12,6 +12,7 @@ import engineering.lightning.wavelength.model.ExternalSeedWalletOpenResult
 import engineering.lightning.wavelength.model.GetExitPlanResult
 import engineering.lightning.wavelength.model.Info
 import engineering.lightning.wavelength.model.ListResult
+import engineering.lightning.wavelength.model.ListWalletDescriptorsResult
 import engineering.lightning.wavelength.model.ListView
 import engineering.lightning.wavelength.model.OnchainHistory
 import engineering.lightning.wavelength.model.OpenWalletResult
@@ -22,6 +23,7 @@ import engineering.lightning.wavelength.model.SweepWalletResult
 import engineering.lightning.wavelength.model.UnlockWalletResult
 import engineering.lightning.wavelength.model.VTXOInventory
 import engineering.lightning.wavelength.model.WalletState
+import kotlin.time.Instant
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -73,8 +75,8 @@ public interface WavelengthClient {
     public suspend fun walletReady(): Boolean
 
     /**
-     * Creates a wallet; with a mnemonic, restores one. A fresh wallet's
-     * result carries the words to back up, once.
+     * Creates a wallet; with a mnemonic or descriptors, restores one. A fresh
+     * wallet's result carries the words to back up, once.
      */
     public suspend fun createWallet(request: CreateWalletRequest): CreateWalletResult
 
@@ -153,6 +155,21 @@ public interface ExternalSeedWalletClient : WavelengthClient {
     ): ExternalSeedWalletOpenResult
 }
 
+/** A client that can also work with a wallet's output descriptors. */
+public interface DescriptorWalletClient : WavelengthClient {
+    /**
+     * Returns the open wallet's `tr` and `wpkh` descriptors: public by default,
+     * or private when [request] resupplies the wallet's mnemonic or root
+     * descriptors. Private descriptors are as sensitive as a seed.
+     */
+    public suspend fun listWalletDescriptors(
+        request: ListWalletDescriptorsRequest = ListWalletDescriptorsRequest(),
+    ): ListWalletDescriptorsResult
+}
+
+/** A client with every way this SDK has of opening a wallet. */
+public interface EmbeddedWavelengthClient : ExternalSeedWalletClient, DescriptorWalletClient
+
 /** The outcome of a dispatched send. */
 public data class SendOutcome(
     /** The activity entry tracking the payment. */
@@ -219,4 +236,20 @@ public suspend fun WavelengthClient.restoreWallet(
 ): CreateWalletResult {
     if (mnemonic.isEmpty()) throw WavelengthException.InvalidArgument("restoreWallet needs a mnemonic")
     return createWallet(CreateWalletRequest(password, mnemonic, seedPassphrase, recoverState = true, recoveryWindow))
+}
+
+/**
+ * Restores a wallet from private [descriptors]: [createWallet] with a recovery
+ * scan. [birthday] bounds the first rescan; null scans from genesis.
+ */
+public suspend fun WavelengthClient.restoreWalletFromDescriptors(
+    password: ByteArray,
+    descriptors: List<String>,
+    birthday: Instant? = null,
+    recoveryWindow: Long? = null,
+): CreateWalletResult {
+    if (descriptors.isEmpty()) throw WavelengthException.InvalidDescriptor("restoreWalletFromDescriptors needs descriptors")
+    return createWallet(
+        CreateWalletRequest(password, recoverState = true, recoveryWindow = recoveryWindow, descriptors = descriptors, birthday = birthday),
+    )
 }

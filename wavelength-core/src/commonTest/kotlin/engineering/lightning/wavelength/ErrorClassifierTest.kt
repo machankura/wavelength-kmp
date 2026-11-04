@@ -52,6 +52,8 @@ class ErrorClassifierTest {
             "resolve descriptor wallet keys: invalid account keys: key families 0 to 255 are required",
             "descriptor wallet requires at least one descriptor",
             "descriptor wallet identity mismatch: expected 02aa, wallet has 02bb",
+            "include_private requires the wallet's mnemonic or root descriptors",
+            "the supplied seed material does not belong to this wallet",
         )) {
             assertEquals("invalid_descriptor", assertClass<WavelengthException.InvalidDescriptor>(message).code)
         }

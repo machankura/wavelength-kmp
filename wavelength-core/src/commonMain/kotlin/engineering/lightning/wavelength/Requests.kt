@@ -2,13 +2,15 @@ package engineering.lightning.wavelength
 
 import engineering.lightning.wavelength.model.EntryKind
 import engineering.lightning.wavelength.model.ListView
+import kotlin.time.Instant
 
 // Public request types. They mirror the TypeScript SDK's requests.ts: unions
 // there are sealed classes here, and secrets are ByteArrays so callers can
 // clear their own copies (the SDK never retains them).
 
 /**
- * Creates a wallet, or restores one when [mnemonic] is set.
+ * Creates a wallet, restores one when [mnemonic] is set, or imports one when
+ * [descriptors] are set.
  *
  * @property password Encrypts the seed on disk; needed again to unlock. At
  *   least 8 bytes (the daemon's minimum).
@@ -18,6 +20,13 @@ import engineering.lightning.wavelength.model.ListView
  * @property recoverState Rescans for Ark state (VTXOs, boarding outputs) on
  *   restore.
  * @property recoveryWindow Address look-ahead for the recovery scan (uint32).
+ * @property descriptors Private output descriptors to build the wallet from
+ *   instead of a mnemonic, as sensitive as a seed. They either share one BIP32
+ *   master key, or are account-level private keys covering the on-chain account
+ *   and every key family.
+ * @property birthday The earliest time the [descriptors] may have received
+ *   funds, bounding the first rescan. Null scans from genesis. Ignored for a
+ *   mnemonic, which carries its own.
  */
 public class CreateWalletRequest(
     public val password: ByteArray,
@@ -25,6 +34,8 @@ public class CreateWalletRequest(
     public val seedPassphrase: ByteArray? = null,
     public val recoverState: Boolean = false,
     public val recoveryWindow: Long? = null,
+    public val descriptors: List<String> = emptyList(),
+    public val birthday: Instant? = null,
 ) {
     public constructor(
         password: String,
@@ -32,10 +43,79 @@ public class CreateWalletRequest(
         seedPassphrase: String? = null,
         recoverState: Boolean = false,
         recoveryWindow: Long? = null,
-    ) : this(password.encodeToByteArray(), mnemonic, seedPassphrase?.encodeToByteArray(), recoverState, recoveryWindow)
+        descriptors: List<String> = emptyList(),
+        birthday: Instant? = null,
+    ) : this(
+        password.encodeToByteArray(),
+        mnemonic,
+        seedPassphrase?.encodeToByteArray(),
+        recoverState,
+        recoveryWindow,
+        descriptors,
+        birthday,
+    )
+
+    /** @throws WavelengthException.InvalidDescriptor */
+    public fun validate() {
+        if (descriptors.isEmpty()) return
+        if (mnemonic.isNotEmpty() || seedPassphrase != null) {
+            throw WavelengthException.InvalidDescriptor("descriptors cannot be combined with a mnemonic or seedPassphrase")
+        }
+        requireDescriptors(descriptors)
+        requireBirthday(birthday, WavelengthException::InvalidDescriptor)
+    }
 
     override fun toString(): String =
-        "CreateWalletRequest(password=<redacted>, mnemonic=<${mnemonic.size} words>, recoverState=$recoverState)"
+        "CreateWalletRequest(password=<redacted>, mnemonic=<${mnemonic.size} words>, " +
+            "descriptors=<${descriptors.size}>, birthday=$birthday, recoverState=$recoverState)"
+}
+
+/**
+ * Selects what [DescriptorWalletClient.listWalletDescriptors] returns: public
+ * descriptors by default.
+ *
+ * @property includePrivate Requests private descriptors. Needs the wallet's
+ *   [mnemonic] or its private root [descriptors], which the daemon checks
+ *   against the open wallet before rendering anything private.
+ * @property mnemonic The wallet's mnemonic, resupplied to authorize the export.
+ * @property seedPassphrase The passphrase for [mnemonic], if it has one.
+ * @property descriptors The wallet's private root descriptors, resupplied to
+ *   authorize the export.
+ */
+public class ListWalletDescriptorsRequest(
+    public val includePrivate: Boolean = false,
+    public val mnemonic: List<String> = emptyList(),
+    public val seedPassphrase: ByteArray? = null,
+    public val descriptors: List<String> = emptyList(),
+) {
+    /** @throws WavelengthException.InvalidDescriptor */
+    public fun validate() {
+        val hasMnemonic = mnemonic.isNotEmpty()
+        val hasDescriptors = descriptors.isNotEmpty()
+        val invalid = when {
+            hasMnemonic && hasDescriptors -> "mnemonic and descriptors are mutually exclusive"
+            seedPassphrase != null && !hasMnemonic -> "seedPassphrase requires a mnemonic"
+            includePrivate && !hasMnemonic && !hasDescriptors -> "includePrivate requires the wallet's mnemonic or root descriptors"
+            !includePrivate && (hasMnemonic || hasDescriptors) -> "mnemonic and descriptors are only used with includePrivate"
+            else -> return
+        }
+        throw WavelengthException.InvalidDescriptor(invalid)
+    }
+
+    override fun toString(): String =
+        "ListWalletDescriptorsRequest(includePrivate=$includePrivate, mnemonic=<${mnemonic.size} words>, descriptors=<${descriptors.size}>)"
+}
+
+private fun requireDescriptors(descriptors: List<String>) {
+    if (descriptors.isEmpty() || descriptors.any { it.isBlank() }) {
+        throw WavelengthException.InvalidDescriptor("descriptors must be a nonempty list of nonblank strings")
+    }
+}
+
+private fun requireBirthday(birthday: Instant?, invalid: (String, Throwable?) -> WavelengthException) {
+    if (birthday != null && birthday.epochSeconds < 0) {
+        throw invalid("birthday must be at or after the Unix epoch", null)
+    }
 }
 
 /** Material for [ExternalSeedWalletClient.startExternalSeedWallet]. */

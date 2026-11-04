@@ -20,6 +20,7 @@ import engineering.lightning.wavelength.model.ExternalSeedWalletOpenResult
 import engineering.lightning.wavelength.model.Info
 import engineering.lightning.wavelength.model.ListResult
 import engineering.lightning.wavelength.model.ListView
+import engineering.lightning.wavelength.model.ListWalletDescriptorsResult
 import engineering.lightning.wavelength.model.OpenWalletResult
 import engineering.lightning.wavelength.model.PrepareSendResult
 import engineering.lightning.wavelength.model.ReceiveResult
@@ -84,6 +85,15 @@ public class FakeFacadeBindings(
 
     /** The identity reported once a wallet exists. */
     public val identityPubKey: String = "02" + "ab".repeat(32)
+
+    /** The master key fingerprint of the wallet's descriptors. */
+    public val rootFingerprint: String = "5bf9f809"
+
+    /** The public descriptors the wallet watches. */
+    public val publicDescriptors: List<String> = listOf(
+        "tr([5bf9f809/86h/0h/0h]tpubFake86/<0;1>/*)#fake86",
+        "wpkh([5bf9f809/84h/0h/0h]tpubFake84/<0;1>/*)#fake84",
+    )
 
     /** Scripts GetExitPlan: receives the requested outpoints. */
     public var exitPlanHandler: ((List<String>) -> GetExitPlanResult)? = null
@@ -253,17 +263,31 @@ public class FakeFacadeBindings(
         }
         FacadeVerb.CREATE_WALLET -> {
             if (walletState != WalletState.NONE) precondition("wallet already exists")
-            val mnemonic = req["Mnemonic"]?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.jsonArray?.map { it.jsonPrimitive.content }.orEmpty()
+            val mnemonic = req.strings("Mnemonic")
+            val freshSeed = mnemonic.isEmpty() && req.strings("Descriptors").isEmpty()
             password = req.string("WalletPassword")
             walletState = WalletState.READY
-            val words = mnemonic.ifEmpty { List(24) { "word${it + 1}" } }
             encode(
                 CreateWalletResult.serializer(),
                 CreateWalletResult(
-                    mnemonic = if (mnemonic.isEmpty()) words else emptyList(),
+                    mnemonic = if (freshSeed) List(24) { "word${it + 1}" } else emptyList(),
                     identityPubKey = identityPubKey,
+                    rootFingerprint = rootFingerprint,
+                    descriptors = publicDescriptors,
                     recoveryRan = req.bool("RecoverState"),
                 ),
+            ) to null
+        }
+        FacadeVerb.LIST_WALLET_DESCRIPTORS -> {
+            requireWallet(verb.wireName)
+            val includePrivate = req.bool("IncludePrivate")
+            if (includePrivate && req.strings("Mnemonic").isEmpty() && req.strings("Descriptors").isEmpty()) {
+                error("include_private requires the wallet's mnemonic or root descriptors")
+            }
+            val descriptors = if (includePrivate) publicDescriptors.map { it.replace("tpub", "tprv") } else publicDescriptors
+            encode(
+                ListWalletDescriptorsResult.serializer(),
+                ListWalletDescriptorsResult(rootFingerprint, descriptors, includePrivate),
             ) to null
         }
         FacadeVerb.UNLOCK_WALLET -> {
@@ -447,6 +471,8 @@ public class FakeFacadeBindings(
         json.encodeToString(serializer, value).encodeToByteArray()
 
     private fun JsonObject.string(key: String): String? = this[key]?.jsonPrimitive?.contentOrNull
+    private fun JsonObject.strings(key: String): List<String> =
+        this[key]?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.jsonArray?.map { it.jsonPrimitive.content }.orEmpty()
     private fun JsonObject.long(key: String): Long = this[key]?.jsonPrimitive?.longOrNull ?: 0
     private fun JsonObject.bool(key: String): Boolean = this[key]?.jsonPrimitive?.booleanOrNull ?: false
 

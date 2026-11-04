@@ -1,6 +1,6 @@
 package engineering.lightning.wavelength.embedded
 
-import engineering.lightning.wavelength.ExternalSeedWalletClient
+import engineering.lightning.wavelength.EmbeddedWavelengthClient
 import engineering.lightning.wavelength.FacadeBindings
 import engineering.lightning.wavelength.FacadeWavelengthClient
 
@@ -21,7 +21,7 @@ public object Wavelength {
      * every caller must share this instance (its lifecycle lock is what keeps
      * start and stop calls from racing).
      */
-    public val client: ExternalSeedWalletClient by lazy { FacadeWavelengthClient(platformBindings) }
+    public val client: EmbeddedWavelengthClient by lazy { FacadeWavelengthClient(platformBindings) }
 }
 
 internal expect val platformBindings: FacadeBindings

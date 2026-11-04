@@ -153,6 +153,8 @@ public object ErrorClassifier {
         "invalid account keys" to WavelengthException::InvalidDescriptor,
         "descriptor wallet requires at least" to WavelengthException::InvalidDescriptor,
         "descriptor wallet identity mismatch" to WavelengthException::InvalidDescriptor,
+        "include_private requires the wallet's mnemonic or root descriptors" to WavelengthException::InvalidDescriptor,
+        "the supplied seed material does not belong to this wallet" to WavelengthException::InvalidDescriptor,
         "invalid watch-only bundle" to WavelengthException::InvalidWatchOnly,
         "invalid manifest" to WavelengthException::InvalidWatchOnly,
         "invalid authentication keys" to WavelengthException::InvalidWatchOnly,

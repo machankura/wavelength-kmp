@@ -3,7 +3,7 @@ package engineering.lightning.wavelength.testing
 import engineering.lightning.wavelength.ActivityEvent
 import engineering.lightning.wavelength.ActivityOptions
 import engineering.lightning.wavelength.ErrorClassifier
-import engineering.lightning.wavelength.ExternalSeedWalletClient
+import engineering.lightning.wavelength.EmbeddedWavelengthClient
 import engineering.lightning.wavelength.FacadeWavelengthClient
 import engineering.lightning.wavelength.model.Entry
 import kotlin.coroutines.cancellation.CancellationException
@@ -20,7 +20,7 @@ import kotlinx.coroutines.flow.map
  */
 public class FakeWavelengthClient(
     public val bindings: FakeFacadeBindings = FakeFacadeBindings(),
-) : ExternalSeedWalletClient by FacadeWavelengthClient(bindings, Dispatchers.Unconfined) {
+) : EmbeddedWavelengthClient by FacadeWavelengthClient(bindings, Dispatchers.Unconfined) {
 
     override fun activity(options: ActivityOptions): Flow<Entry> =
         activityEvents(options).filterIsInstance<ActivityEvent.EntryReceived>().map { it.entry }

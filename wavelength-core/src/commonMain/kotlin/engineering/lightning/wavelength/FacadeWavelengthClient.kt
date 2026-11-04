@@ -13,6 +13,7 @@ import engineering.lightning.wavelength.model.ExternalSeedWalletOpenResult
 import engineering.lightning.wavelength.model.GetExitPlanResult
 import engineering.lightning.wavelength.model.Info
 import engineering.lightning.wavelength.model.ListResult
+import engineering.lightning.wavelength.model.ListWalletDescriptorsResult
 import engineering.lightning.wavelength.model.OpenWalletResult
 import engineering.lightning.wavelength.model.PrepareSendResult
 import engineering.lightning.wavelength.model.ReceiveResult
@@ -56,10 +57,11 @@ import kotlinx.serialization.SerializationStrategy
 import engineering.lightning.wavelength.wire.CreateWalletRequest as WireCreateWalletRequest
 import engineering.lightning.wavelength.wire.ExitRequest as WireExitRequest
 import engineering.lightning.wavelength.wire.ListRequest as WireListRequest
+import engineering.lightning.wavelength.wire.ListWalletDescriptorsRequest as WireListWalletDescriptorsRequest
 import engineering.lightning.wavelength.wire.SweepWalletRequest as WireSweepWalletRequest
 
 /**
- * [ExternalSeedWalletClient] over a [FacadeBindings]: all of the SDK's
+ * [EmbeddedWavelengthClient] over a [FacadeBindings]: all of the SDK's
  * behaviour, independent of platform.
  *
  * - Start, stop, and external-seed starts run one at a time under a lifecycle
@@ -76,7 +78,7 @@ public class FacadeWavelengthClient(
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(DEFAULT_PARALLELISM),
     /** Logs request payloads (secrets redacted) at debug level. Off by default. */
     private val logPayloads: Boolean = false,
-) : ExternalSeedWalletClient {
+) : EmbeddedWavelengthClient {
 
     private val lifecycleMutex = Mutex()
 
@@ -194,14 +196,33 @@ public class FacadeWavelengthClient(
         request.recoveryWindow?.let {
             if (it !in 0..0xFFFF_FFFFL) throw WavelengthException.InvalidArgument("recoveryWindow must fit in uint32")
         }
+        request.validate()
         val wire = WireCreateWalletRequest(
             mnemonic = request.mnemonic,
             seedPassphrase = request.seedPassphrase?.let(ByteString::of) ?: ByteString.EMPTY,
             walletPassword = ByteString.of(request.password),
             recoverState = request.recoverState,
             recoveryWindow = request.recoveryWindow ?: 0,
+            descriptors = request.descriptors,
+            birthday = request.birthday,
         )
         return call(FacadeVerb.CREATE_WALLET, WireCreateWalletRequest.serializer(), wire, CreateWalletResult.serializer())
+    }
+
+    override suspend fun listWalletDescriptors(request: ListWalletDescriptorsRequest): ListWalletDescriptorsResult {
+        request.validate()
+        val wire = WireListWalletDescriptorsRequest(
+            includePrivate = request.includePrivate,
+            mnemonic = request.mnemonic,
+            seedPassphrase = request.seedPassphrase?.let(ByteString::of) ?: ByteString.EMPTY,
+            descriptors = request.descriptors,
+        )
+        return call(
+            FacadeVerb.LIST_WALLET_DESCRIPTORS,
+            WireListWalletDescriptorsRequest.serializer(),
+            wire,
+            ListWalletDescriptorsResult.serializer(),
+        )
     }
 
     override suspend fun unlockWallet(password: ByteArray): UnlockWalletResult {

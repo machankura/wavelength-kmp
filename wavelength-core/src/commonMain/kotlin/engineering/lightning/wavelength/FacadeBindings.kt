@@ -75,4 +75,5 @@ public enum class FacadeVerb(public val wireName: String) {
     EXIT_SUMMARY("exitSummary"),
     GET_EXIT_PLAN("getExitPlan"),
     SWEEP_WALLET("sweepWallet"),
+    LIST_WALLET_DESCRIPTORS("listWalletDescriptors"),
 }
