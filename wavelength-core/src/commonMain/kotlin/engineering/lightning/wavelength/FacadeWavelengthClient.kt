@@ -95,7 +95,9 @@ public class FacadeWavelengthClient(
 
     override suspend fun start(config: RuntimeConfig): Info {
         config.validate()
-        lifecycleMutex.withLock {
+        // The first info is read under the lock too: a stop landing between the
+        // boot and the read would fail this start with "not started".
+        return lifecycleMutex.withLock {
             if (!bindings.isRunning()) {
                 val json = WireJson.encodeToString(MobileConfig.serializer(), config.toWire())
                 log(LogLevel.INFO, "starting wavelength runtime (${config.network.wire})")
@@ -106,8 +108,8 @@ public class FacadeWavelengthClient(
             } else {
                 _lifecycle.value = RuntimeLifecycle.RUNNING
             }
+            getInfo()
         }
-        return getInfo()
     }
 
     override suspend fun startExternalSeedWallet(
