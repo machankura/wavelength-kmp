@@ -5,14 +5,21 @@
 package engineering.lightning.wavelength.wire
 
 import engineering.lightning.wavelength.ByteString
+import engineering.lightning.wavelength.internal.GoTimeSerializer
 import engineering.lightning.wavelength.model.EntryKind
 import engineering.lightning.wavelength.model.ListView
 import engineering.lightning.wavelength.model.ListViewFieldSerializer
+import kotlin.time.Instant
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * CreateWalletRequest creates or imports a daemon wallet.
+ * CreateWalletRequest creates or imports a daemon wallet. Set Mnemonic to
+ * import an aezeed mnemonic, or Descriptors to import private output
+ * descriptors that share one BIP32 master key; leave both empty to generate
+ * a fresh mnemonic. Birthday bounds the first rescan of a descriptor import
+ * (zero scans from genesis) and is ignored for mnemonics, which carry their
+ * own.
  */
 @Serializable
 internal data class CreateWalletRequest(
@@ -21,6 +28,36 @@ internal data class CreateWalletRequest(
     @SerialName("WalletPassword") internal val walletPassword: ByteString = ByteString.EMPTY,
     @SerialName("RecoverState") internal val recoverState: Boolean = false,
     @SerialName("RecoveryWindow") internal val recoveryWindow: Long = 0L,
+    @SerialName("Descriptors") internal val descriptors: List<String> = emptyList(),
+    @Serializable(with = GoTimeSerializer::class) @SerialName("Birthday") internal val birthday: Instant? = null,
+    /**
+     * WatchOnlyBundle creates a watch-only wallet from a remote
+     * signer's bundle, full or minimal. It needs Config.RemoteSigner.
+     */
+    @SerialName("WatchOnlyBundle") internal val watchOnlyBundle: ByteString = ByteString.EMPTY,
+    /**
+     * WatchOnlyManifest with AuthKeys creates a watch-only wallet whose
+     * fund slots come from several keys. It needs Config.RemoteSigner;
+     * OverrideIdentity allows a manifest that replaces the identity
+     * family.
+     */
+    @SerialName("WatchOnlyManifest") internal val watchOnlyManifest: ByteString = ByteString.EMPTY,
+    @SerialName("AuthKeys") internal val authKeys: ByteString = ByteString.EMPTY,
+    @SerialName("OverrideIdentity") internal val overrideIdentity: Boolean = false,
+)
+
+/**
+ * ListWalletDescriptorsRequest selects public or private descriptor export.
+ * IncludePrivate requires the wallet's Mnemonic (with SeedPassphrase when
+ * one was used) or its private root Descriptors, which the daemon checks
+ * against the open wallet before rendering private descriptors.
+ */
+@Serializable
+internal data class ListWalletDescriptorsRequest(
+    @SerialName("IncludePrivate") internal val includePrivate: Boolean = false,
+    @SerialName("Mnemonic") internal val mnemonic: List<String> = emptyList(),
+    @SerialName("SeedPassphrase") internal val seedPassphrase: ByteString = ByteString.EMPTY,
+    @SerialName("Descriptors") internal val descriptors: List<String> = emptyList(),
 )
 
 /**

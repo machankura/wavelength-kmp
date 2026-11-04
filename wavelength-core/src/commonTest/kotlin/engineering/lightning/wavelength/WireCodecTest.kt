@@ -70,6 +70,9 @@ class WireCodecTest {
         assertEquals(ByteString.of(byteArrayOf(0, 1, 2, 250.toByte())), r.encipheredSeed)
         assertEquals(listOf("abandon", "ability"), r.mnemonic)
         assertEquals(3L, r.recoveredVtxos)
+        // Go encodes the unset Descriptors slice as null.
+        assertEquals(emptyList(), r.descriptors)
+        assertEquals("", r.manifestHash)
     }
 
     @Test
@@ -161,7 +164,7 @@ class WireCodecTest {
 
     private fun kotlinx.serialization.json.JsonElement.isGoZero(): Boolean = when (this) {
         JsonNull -> true
-        is JsonPrimitive -> content in setOf("", "0", "false")
+        is JsonPrimitive -> content in setOf("", "0", "false", "0001-01-01T00:00:00Z")
         is JsonObject -> isEmpty()
         else -> false
     }

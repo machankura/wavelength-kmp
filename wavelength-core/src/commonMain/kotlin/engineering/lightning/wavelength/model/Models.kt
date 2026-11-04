@@ -74,6 +74,11 @@ public data class Info(
     @SerialName("WalletState") public val walletState: WalletState = WalletState.UNSPECIFIED,
     @SerialName("IdentityPubKey") public val identityPubKey: String = "",
     @SerialName("ServerInfo") public val serverInfo: ServerInfo? = null,
+    /**
+     * ManifestHash is the hash of the manifest a watch-only wallet was
+     * created from; empty otherwise.
+     */
+    @SerialName("ManifestHash") public val manifestHash: String = "",
 )
 
 /**
@@ -89,20 +94,36 @@ public data class ServerInfo(
 )
 
 /**
- * CreateWalletResult returns the seed words, daemon identity, and optional
- * recovery counters.
+ * CreateWalletResult returns the seed words, daemon identity, the public
+ * descriptors the wallet watches, and optional recovery counters. Mnemonic
+ * and EncipheredSeed are empty for a descriptor import.
  */
 @Serializable
 public data class CreateWalletResult(
     @SerialName("Mnemonic") public val mnemonic: List<String> = emptyList(),
     @SerialName("EncipheredSeed") public val encipheredSeed: ByteString = ByteString.EMPTY,
     @SerialName("IdentityPubKey") public val identityPubKey: String = "",
+    @SerialName("RootFingerprint") public val rootFingerprint: String = "",
+    @SerialName("Descriptors") public val descriptors: List<String> = emptyList(),
+    @SerialName("ManifestHash") public val manifestHash: String = "",
     @SerialName("RecoveryRan") public val recoveryRan: Boolean = false,
     @SerialName("RecoveredBoardingAddresses") public val recoveredBoardingAddresses: Long = 0L,
     @SerialName("RecoveredBoardingUTXOs") public val recoveredBoardingUtxos: Long = 0L,
     @SerialName("RecoveredVTXOs") public val recoveredVtxos: Long = 0L,
     @SerialName("RecoveredOORReceiveScripts") public val recoveredOorReceiveScripts: Long = 0L,
     @SerialName("RecoveredOORRecipientEvents") public val recoveredOorRecipientEvents: Long = 0L,
+)
+
+/**
+ * ListWalletDescriptorsResult carries the wallet's tr and wpkh descriptors.
+ * RootFingerprint is empty for a wallet whose fingerprint was never
+ * recorded; its public descriptors then carry no key origin.
+ */
+@Serializable
+public data class ListWalletDescriptorsResult(
+    @SerialName("RootFingerprint") public val rootFingerprint: String = "",
+    @SerialName("Descriptors") public val descriptors: List<String> = emptyList(),
+    @SerialName("IncludesPrivate") public val includesPrivate: Boolean = false,
 )
 
 /**
@@ -136,6 +157,43 @@ public data class OpenWalletResult(
 public data class ExternalSeedWalletOpenResult(
     @SerialName("Imported") public val imported: Boolean = false,
     @SerialName("IdentityPubKey") public val identityPubKey: String = "",
+    @SerialName("RecoveryRan") public val recoveryRan: Boolean = false,
+    @SerialName("RecoveredBoardingAddresses") public val recoveredBoardingAddresses: Long = 0L,
+    @SerialName("RecoveredBoardingUTXOs") public val recoveredBoardingUtxos: Long = 0L,
+    @SerialName("RecoveredVTXOs") public val recoveredVtxos: Long = 0L,
+    @SerialName("RecoveredOORReceiveScripts") public val recoveredOorReceiveScripts: Long = 0L,
+    @SerialName("RecoveredOORRecipientEvents") public val recoveredOorRecipientEvents: Long = 0L,
+)
+
+/**
+ * DescriptorWalletOpenResult reports a descriptor wallet import or unlock,
+ * the public descriptors it watches, and the optional state-recovery scan.
+ */
+@Serializable
+public data class DescriptorWalletOpenResult(
+    @SerialName("Imported") public val imported: Boolean = false,
+    @SerialName("IdentityPubKey") public val identityPubKey: String = "",
+    @SerialName("RootFingerprint") public val rootFingerprint: String = "",
+    @SerialName("Descriptors") public val descriptors: List<String> = emptyList(),
+    @SerialName("RecoveryRan") public val recoveryRan: Boolean = false,
+    @SerialName("RecoveredBoardingAddresses") public val recoveredBoardingAddresses: Long = 0L,
+    @SerialName("RecoveredBoardingUTXOs") public val recoveredBoardingUtxos: Long = 0L,
+    @SerialName("RecoveredVTXOs") public val recoveredVtxos: Long = 0L,
+    @SerialName("RecoveredOORReceiveScripts") public val recoveredOorReceiveScripts: Long = 0L,
+    @SerialName("RecoveredOORRecipientEvents") public val recoveredOorRecipientEvents: Long = 0L,
+)
+
+/**
+ * WatchOnlyWalletOpenResult reports a watch-only wallet import or unlock
+ * and the optional state-recovery scan.
+ */
+@Serializable
+public data class WatchOnlyWalletOpenResult(
+    @SerialName("Imported") public val imported: Boolean = false,
+    @SerialName("IdentityPubKey") public val identityPubKey: String = "",
+    @SerialName("RootFingerprint") public val rootFingerprint: String = "",
+    @SerialName("ManifestHash") public val manifestHash: String = "",
+    @SerialName("Descriptors") public val descriptors: List<String> = emptyList(),
     @SerialName("RecoveryRan") public val recoveryRan: Boolean = false,
     @SerialName("RecoveredBoardingAddresses") public val recoveredBoardingAddresses: Long = 0L,
     @SerialName("RecoveredBoardingUTXOs") public val recoveredBoardingUtxos: Long = 0L,

@@ -46,6 +46,55 @@ class ErrorClassifierTest {
     }
 
     @Test
+    fun descriptorErrors() {
+        for (message in listOf(
+            "start descriptor wallet: invalid descriptors: unsupported key",
+            "resolve descriptor wallet keys: invalid account keys: key families 0 to 255 are required",
+            "descriptor wallet requires at least one descriptor",
+            "descriptor wallet identity mismatch: expected 02aa, wallet has 02bb",
+        )) {
+            assertEquals("invalid_descriptor", assertClass<WavelengthException.InvalidDescriptor>(message).code)
+        }
+    }
+
+    @Test
+    fun watchOnlyErrors() {
+        for (message in listOf(
+            "invalid watch-only bundle: bad checksum",
+            "invalid manifest: unexpected end of JSON input",
+            "invalid authentication keys: bad length",
+            "watch-only wallet requires a wallet password",
+            "watch-only wallet requires exactly one of a bundle and a manifest",
+            "a watch-only wallet needs Config.RemoteSigner",
+            "a manifest requires its authentication keys",
+            "authentication keys and OverrideIdentity are only used with a manifest",
+            "watch-only wallet identity mismatch: request gives 02aa, wallet has 02bb",
+            "wallet accounts do not match its stored manifest: slot family/0",
+            "the wallet database holds public keys only; configure the remote signer that holds its private keys",
+            "the wallet's bundle does not cover every key family this version uses; export a new minimal bundle",
+            "key family not supplied by the wallet's bundle",
+        )) {
+            assertEquals("invalid_watch_only", assertClass<WavelengthException.InvalidWatchOnly>(message).code)
+        }
+    }
+
+    @Test
+    fun remoteSignerErrors() {
+        for (message in listOf(
+            "connect to remote signer: context deadline exceeded",
+            "remote signer not ready: context deadline exceeded",
+            "remote signer challenge: rpc error: code = Unavailable desc = connection refused",
+            "verify remote signer: remote signer does not hold this wallet's keys",
+            "signer does not hold the key for a wallet slot: [family/0]",
+            // A first open that failed after the database was created.
+            "rpc error: code = FailedPrecondition desc = connect to remote signer: refused " +
+                "(the wallet database was created; retry via UnlockWallet)",
+        )) {
+            assertEquals("remote_signer_failed", assertClass<WavelengthException.RemoteSignerFailed>(message).code)
+        }
+    }
+
+    @Test
     fun grpcCodes() {
         val pre = assertClass<WavelengthException.FailedPrecondition>("rpc error: code = FailedPrecondition desc = wallet locked")
         assertEquals("FailedPrecondition", pre.grpcCode)

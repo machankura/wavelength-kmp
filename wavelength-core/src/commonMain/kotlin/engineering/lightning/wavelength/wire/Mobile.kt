@@ -44,6 +44,11 @@ internal data class MobileConfig(
     @SerialName("signing_workers") val signingWorkers: Long? = null,
     @SerialName("eager_round_join") val eagerRoundJoin: Boolean? = null,
     @SerialName("buffer_size") val bufferSize: Long? = null,
+    @SerialName("remote_signer_rpc_host") val remoteSignerRpcHost: String? = null,
+    @SerialName("remote_signer_macaroon_path") val remoteSignerMacaroonPath: String? = null,
+    @SerialName("remote_signer_tls_cert_path") val remoteSignerTlsCertPath: String? = null,
+    @SerialName("remote_signer_connect_timeout_seconds") val remoteSignerConnectTimeoutSeconds: Long? = null,
+    @SerialName("remote_signer_request_timeout_seconds") val remoteSignerRequestTimeoutSeconds: Long? = null,
 )
 
 /**

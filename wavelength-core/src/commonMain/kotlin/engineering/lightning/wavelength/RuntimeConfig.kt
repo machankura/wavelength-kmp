@@ -35,6 +35,28 @@ public enum class ServerTransport(public val wire: String) {
 }
 
 /**
+ * The remote signer holding a watch-only wallet's private keys. The wallet
+ * dials out to it over gRPC and has it sign a challenge with every key on each
+ * open, so opening fails when the signer is unreachable or holds other keys.
+ *
+ * The daemon reads the macaroon and certificate from these paths on every
+ * start, so they must stay on local storage the app can read. Android content
+ * URIs are not paths: copy the files into the app's own storage first.
+ */
+public data class RemoteSignerConfig(
+    /** The signer's `host:port`. */
+    val rpcHost: String,
+    /** Absolute path of the signer's macaroon. */
+    val macaroonPath: String,
+    /** Absolute path of the signer's TLS certificate. */
+    val tlsCertPath: String,
+    /** How long to wait for the signer to come up, in seconds; null keeps the daemon default. */
+    val connectTimeoutSeconds: Long? = null,
+    /** How long one signing request may take, in seconds; null keeps the daemon default. */
+    val requestTimeoutSeconds: Long? = null,
+)
+
+/**
  * Configuration for [WavelengthClient.start]. Every field except [network] is
  * optional; an unset field is omitted from the wire config so the daemon's own
  * per-network default applies.
@@ -99,6 +121,8 @@ public data class RuntimeConfig(
     val eagerRoundJoin: Boolean? = null,
     /** In-memory gRPC listener buffer size override. */
     val bufferSize: Long? = null,
+    /** The signer holding the private keys of a watch-only wallet. */
+    val remoteSigner: RemoteSignerConfig? = null,
 ) {
     /**
      * Checks host-owned settings before they reach the daemon.
@@ -137,6 +161,13 @@ public data class RuntimeConfig(
         if ((maxPaymentCltv ?: 0) > Int.MAX_VALUE) invalid("maxPaymentCltv must fit in int32")
         if ((bufferSize ?: 0) > Int.MAX_VALUE) invalid("bufferSize must fit in int32")
         if (dataDir != null && dataDir.isBlank()) invalid("dataDir must not be blank")
+        remoteSigner?.run {
+            if (rpcHost.isBlank()) invalid("remoteSigner.rpcHost must not be blank")
+            if (macaroonPath.isBlank()) invalid("remoteSigner.macaroonPath must not be blank")
+            if (tlsCertPath.isBlank()) invalid("remoteSigner.tlsCertPath must not be blank")
+            if ((connectTimeoutSeconds ?: 0) < 0) invalid("remoteSigner.connectTimeoutSeconds must not be negative")
+            if ((requestTimeoutSeconds ?: 0) < 0) invalid("remoteSigner.requestTimeoutSeconds must not be negative")
+        }
     }
 
     internal fun toWire(): MobileConfig = MobileConfig(
@@ -170,6 +201,11 @@ public data class RuntimeConfig(
         signingWorkers = signingWorkers,
         eagerRoundJoin = eagerRoundJoin,
         bufferSize = bufferSize,
+        remoteSignerRpcHost = remoteSigner?.rpcHost,
+        remoteSignerMacaroonPath = remoteSigner?.macaroonPath,
+        remoteSignerTlsCertPath = remoteSigner?.tlsCertPath,
+        remoteSignerConnectTimeoutSeconds = remoteSigner?.connectTimeoutSeconds,
+        remoteSignerRequestTimeoutSeconds = remoteSigner?.requestTimeoutSeconds,
     )
 
     private fun <T> T.unlessSwapsDisabled(): T? = if (disableSwaps) null else this

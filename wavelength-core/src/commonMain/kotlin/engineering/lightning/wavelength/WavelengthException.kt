@@ -31,6 +31,28 @@ public sealed class WavelengthException(
     public class InvalidExternalSeed(message: String, cause: Throwable? = null) :
         WavelengthException("invalid_external_seed", message, cause)
 
+    /**
+     * A descriptor wallet request is invalid, the daemon refused its
+     * descriptors, or they derive a different identity from the wallet's.
+     */
+    public class InvalidDescriptor(message: String, cause: Throwable? = null) :
+        WavelengthException("invalid_descriptor", message, cause)
+
+    /**
+     * A watch-only wallet request is invalid, the daemon refused its bundle or
+     * manifest, or the wallet no longer matches them. Retrying will not help.
+     */
+    public class InvalidWatchOnly(message: String, cause: Throwable? = null) :
+        WavelengthException("invalid_watch_only", message, cause)
+
+    /**
+     * The remote signer could not be reached, or it holds different keys. This
+     * is not a wrong password: offer a retry once the signer is back, and check
+     * its settings if the message says it does not hold the wallet's keys.
+     */
+    public class RemoteSignerFailed(message: String, cause: Throwable? = null) :
+        WavelengthException("remote_signer_failed", message, cause)
+
     /** An argument was rejected before reaching the daemon. */
     public class InvalidArgument(message: String, cause: Throwable? = null) :
         WavelengthException("invalid_argument", message, cause)
@@ -127,6 +149,28 @@ public object ErrorClassifier {
         "amount exceeds the operator's maximum VTXO size" to WavelengthException::AmountExceedsVtxoLimit,
         "amount would exceed the maximum allowed wallet balance" to WavelengthException::BalanceLimitExceeded,
         "sub-dust receive via the operator credit subsystem is unavailable" to WavelengthException::CreditReceiveUnavailable,
+        "invalid descriptors" to WavelengthException::InvalidDescriptor,
+        "invalid account keys" to WavelengthException::InvalidDescriptor,
+        "descriptor wallet requires at least" to WavelengthException::InvalidDescriptor,
+        "descriptor wallet identity mismatch" to WavelengthException::InvalidDescriptor,
+        "invalid watch-only bundle" to WavelengthException::InvalidWatchOnly,
+        "invalid manifest" to WavelengthException::InvalidWatchOnly,
+        "invalid authentication keys" to WavelengthException::InvalidWatchOnly,
+        "watch-only wallet requires" to WavelengthException::InvalidWatchOnly,
+        "a watch-only wallet needs" to WavelengthException::InvalidWatchOnly,
+        "a manifest requires its authentication keys" to WavelengthException::InvalidWatchOnly,
+        "authentication keys and OverrideIdentity" to WavelengthException::InvalidWatchOnly,
+        "watch-only wallet identity mismatch" to WavelengthException::InvalidWatchOnly,
+        "wallet accounts do not match its stored manifest" to WavelengthException::InvalidWatchOnly,
+        "the wallet database holds public keys only" to WavelengthException::InvalidWatchOnly,
+        "the wallet's bundle does not cover every key family" to WavelengthException::InvalidWatchOnly,
+        "key family not supplied by the wallet's bundle" to WavelengthException::InvalidWatchOnly,
+        "connect to remote signer" to WavelengthException::RemoteSignerFailed,
+        "remote signer not ready" to WavelengthException::RemoteSignerFailed,
+        "remote signer challenge" to WavelengthException::RemoteSignerFailed,
+        "verify remote signer" to WavelengthException::RemoteSignerFailed,
+        "remote signer does not hold this wallet's keys" to WavelengthException::RemoteSignerFailed,
+        "signer does not hold the key for a wallet slot" to WavelengthException::RemoteSignerFailed,
     )
 
     private val grpcStatus = Regex("""rpc error: code = (\w+) desc = """)

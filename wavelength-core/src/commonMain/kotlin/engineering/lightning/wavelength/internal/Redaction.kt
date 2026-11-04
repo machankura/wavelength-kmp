@@ -6,9 +6,14 @@ internal object Redaction {
     // SDK's debug redaction list.
     private val secretKeys = setOf(
         "walletpassword", "seedpassphrase", "mnemonic", "encipheredseed", "seedentropy", "prfoutput",
+        "descriptors", "bundle", "manifest", "authkeys", "watchonlybundle", "watchonlymanifest",
     )
 
-    private val keyedValue = Regex(""""([A-Za-z_]+)"\s*:\s*("(?:[^"\\]|\\.)*"|\[[^\]]*]|null)""")
+    // An array's strings are matched whole: a descriptor's key origin holds a
+    // bracket, which must not end the array with the key still to come.
+    private val keyedValue = Regex(
+        """"([A-Za-z_]+)"\s*:\s*("(?:[^"\\]|\\.)*"|\[(?:[^\]"]|"(?:[^"\\]|\\.)*")*]|null)""",
+    )
 
     fun redact(json: String): String = keyedValue.replace(json) { m ->
         val key = m.groupValues[1]

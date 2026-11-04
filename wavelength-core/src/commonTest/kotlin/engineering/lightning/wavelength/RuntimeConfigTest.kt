@@ -93,6 +93,34 @@ class RuntimeConfigTest {
     }
 
     @Test
+    fun remoteSignerOnTheWire() {
+        val signer = RemoteSignerConfig("10.0.2.2:10019", "/data/signer.macaroon", "/data/tls.cert", 5, 30)
+        val wire = wireOf(RuntimeConfig(network = Network.SIGNET, remoteSigner = signer))
+        assertEquals(JsonPrimitive("10.0.2.2:10019"), wire["remote_signer_rpc_host"])
+        assertEquals(JsonPrimitive("/data/signer.macaroon"), wire["remote_signer_macaroon_path"])
+        assertEquals(JsonPrimitive("/data/tls.cert"), wire["remote_signer_tls_cert_path"])
+        assertEquals(JsonPrimitive(5), wire["remote_signer_connect_timeout_seconds"])
+        assertEquals(JsonPrimitive(30), wire["remote_signer_request_timeout_seconds"])
+        assertFalse(wireOf(RuntimeConfig(network = Network.SIGNET)).keys.any { it.startsWith("remote_signer") })
+    }
+
+    @Test
+    fun remoteSignerValidation() {
+        val signer = RemoteSignerConfig("host:1", "/m", "/c")
+        val base = RuntimeConfig(network = Network.SIGNET, remoteSigner = signer)
+        base.validate()
+        listOf(
+            signer.copy(rpcHost = " "),
+            signer.copy(macaroonPath = ""),
+            signer.copy(tlsCertPath = ""),
+            signer.copy(connectTimeoutSeconds = -1),
+            signer.copy(requestTimeoutSeconds = -1),
+        ).forEach {
+            assertFailsWith<WavelengthException.InvalidConfig>("$it") { base.copy(remoteSigner = it).validate() }
+        }
+    }
+
+    @Test
     fun debugLevels() {
         assertTrue("info" in RuntimeConfig.DEBUG_LEVELS)
     }
