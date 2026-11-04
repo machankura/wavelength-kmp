@@ -34,8 +34,8 @@ the PascalCase Go field names, acronyms included (`SendIntentID`,
   exact `@SerialName` on every field.
 - **Fixtures.** `tools/go-fixtures` produces real `encoding/json` output
   for the codec tests.
-- **Exceptions.** The `Start` config and the external-seed envelope are
-  snake_case, and the passkey request is camelCase. These are hand-written
+- **Exceptions.** The `Start` config and the atomic start envelopes
+  (external-seed, descriptor, watch-only) are snake_case, and the passkey request is camelCase. These are hand-written
   in `wire/Mobile.kt`, and their keys are checked against the Go json tags.
 - **Requests** always use the exact Go key names. The TypeScript SDK
   instead relies on Go matching keys case-insensitively.
@@ -49,7 +49,7 @@ the PascalCase Go field names, acronyms included (`SendIntentID`,
   `next()` waits for activity. They run on
   `Dispatchers.IO.limitedParallelism(16)`, and each open activity stream
   holds one of those threads.
-- **Lifecycle lock.** `start`, `stop`, and `startExternalSeedWallet` run
+- **Lifecycle lock.** `start`, `stop`, and the atomic wallet starts run
   one at a time under a mutex, as the facade requires of typed SDKs.
 - **Singleton.** One daemon runs per process, so `Wavelength.client` is a
   process-wide singleton.

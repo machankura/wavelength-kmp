@@ -28,15 +28,17 @@ Then stop `wavesigner`, restart the app and see a clear signer error.
 
 ## Progress
 
-- [ ] Milestone 0: branch, baseline and bindings from a local daemon checkout.
-- [ ] Milestone 1: regenerated models, remote signer config, redaction, errors.
-- [ ] Milestone 2: descriptors through `createWallet`, and descriptor export.
-- [ ] Milestone 3: `DescriptorWalletClient` with atomic startup.
-- [ ] Milestone 4: `WatchOnlyWalletClient` and watch-only `createWallet`.
-- [ ] Milestone 5: `WalletEngine`, `WalletProfiles`, `BackgroundRestartPolicy`.
-- [ ] Milestone 6: Swift surface and iOS tests in macOS CI.
-- [ ] Milestone 7: Android sample and device tests against a real signer.
-- [ ] Milestone 8: documentation, parity table, release pin.
+- [x] Milestone 0: branch, baseline and bindings from a local daemon checkout.
+- [x] Milestone 1: regenerated models, remote signer config, redaction, errors.
+- [x] Milestone 2: descriptors through `createWallet`, and descriptor export.
+- [x] Milestone 3: `DescriptorWalletClient` with atomic startup.
+- [x] Milestone 4: `WatchOnlyWalletClient` and watch-only `createWallet`.
+- [x] Milestone 5: `WalletEngine`, `WalletProfiles`, `BackgroundRestartPolicy`.
+- [ ] Milestone 6: Swift surface and iOS tests in macOS CI. Written, never compiled. Needs a Mac,
+      or the release below, because CI stages the pinned bindings.
+- [x] Milestone 7: Android sample and device tests against a real signer.
+- [ ] Milestone 8: documentation and parity table are done. The release pin waits on a `wavelength`
+      release that contains the `descriptors` branch.
 
 
 ## Surprises & Discoveries
@@ -63,6 +65,42 @@ These were found while writing this plan, from reading the code on 2026-11-04.
   an ancestor of it.
   Evidence: `git rev-list --count v0.2.1..descriptors` and
   `git merge-base --is-ancestor v0.2.1 descriptors`.
+
+- Observation: CI cannot pass on this branch until a release exists, so Milestone 6 as written, "the
+  `ios` job passes on a pushed branch", cannot happen first. Every job stages the pinned `v0.2.1`
+  bindings, which lack `MobileListWalletDescriptors` and the two new start verbs, so the Android and
+  iOS code will not compile there, beyond the `generate-models.sh --check` failure this plan expected.
+  Evidence: `scripts/fetch-bindings.sh all` in `.github/workflows/gradle.yml`, and the `v0.2.1` pin.
+
+- Observation: The redaction regex ended a JSON array at the first `]`, and a descriptor's key origin
+  holds one, so adding `descriptors` to the secret keys alone would have logged the private key after
+  the origin.
+  Evidence: `RedactionTest.aKeyOriginDoesNotEndTheArrayEarly`, with the old pattern in
+  `internal/Redaction.kt`.
+
+- Observation: `start` read its first info outside the lifecycle lock, so a concurrent `stop` could
+  fail it with "not started". This predates this work and made `check` fail at random.
+  Evidence: `FacadeWavelengthClientTest.concurrentLifecycleCallsAreSerialised` failed once on the
+  Android host run.
+
+- Observation: A reopened watch-only wallet reported an empty fingerprint and no descriptors, unlike a
+  reopened descriptor wallet. Fixed in `wavelength` (`37c3ea48`), with a Go test, because this result
+  type is shared with every SDK.
+  Evidence: the device test `aSignerWithOtherKeysIsRefused`. The stub tests had covered only the import.
+
+- Observation: A first open that failed after creating the database never recorded the key origin, and
+  its retry goes through `UnlockWallet`, so that wallet exported no fingerprint or origins for good. A
+  wrong signer or a chain backend outage was enough. Fixed in `wavelength` (`8d01d467`).
+  Evidence: the same device test, before and after. It has no Go test, because the path needs a wallet
+  start that fails after creating the database, and a stub cannot do that.
+
+- Observation: The daemon's 8-byte password minimum also applies to watch-only wallets, so this plan's
+  "nonempty password" would have let a short one through to fail after a boot.
+  Evidence: `ValidateWalletPassword` in `waved/wallet_ops.go`.
+
+- Observation: A failed first open on an unreachable signer stores nothing, while other keys or a later
+  failure leave the database created, so the retry differs. `wavelength-mobile` found this first.
+  Evidence: `aDeadSignerIsATypedFailureAndLeavesNoWallet` and `aSignerWithOtherKeysIsRefused`.
 
 
 ## Decision Log
@@ -105,10 +143,76 @@ These were found while writing this plan, from reading the code on 2026-11-04.
   the signer.
   Date/Author: 2026-11-04, plan author.
 
+- Decision: Add `EmbeddedWavelengthClient`, gathering the three optional interfaces, as the declared
+  type of `Wavelength.client` and the delegate of `FakeWavelengthClient`.
+  Rationale: Kotlin cannot delegate to several interfaces that share a parent, so the fake could not
+  otherwise offer them all.
+  Date/Author: 2026-11-04, implementer.
+
+- Decision: Add `RemoteSignerFailed`, because the strings are stable: `ErrWrongRemoteSigner`,
+  `ErrSlotProbeFailed` and fixed wrapping text at each connect and verify step. The message tells an
+  unreachable signer from one with other keys, and both call for the same retry.
+  Rationale: The whole point of the type is that a host does not call this a wrong password. Errors
+  that a retry cannot fix, such as `ErrManifestMismatch`, are `InvalidWatchOnly` instead.
+  Date/Author: 2026-11-04, implementer.
+
+- Decision: `BackgroundRestartPolicy.reopening(client, scope, reopen)` instead of an optional `reopen`
+  constructor parameter.
+  Rationale: Hosts write `BackgroundRestartPolicy(client, scope) { config }`. A parameter after `config`
+  would capture that trailing lambda and break them, and one before it would demand a config that a
+  reopening policy never uses.
+  Date/Author: 2026-11-04, implementer.
+
+- Decision: The sample stops and starts through `WalletEngine`, not `BackgroundRestartPolicy`.
+  Rationale: The policy drives the client directly and the engine would stay `STOPPED`, because the
+  sample's whole UI is the engine's phase.
+  Date/Author: 2026-11-04, implementer.
+
+- Decision: Tests use the signet form of BIP32 test vector 1's master key, whose fingerprint `3442193e`
+  is in the BIP.
+  Rationale: The key is already public, so committing it in tests discloses nothing.
+  Date/Author: 2026-11-04, implementer.
+
 
 ## Outcomes & Retrospective
 
-Nothing has been implemented yet. Fill this in at each milestone and at the end.
+Everything but iOS and the release works on Android, against the real runtime and real signers. The
+branch sits on `wavelength` at `8d01d467`, built locally, so it cannot be merged or released yet.
+
+Against an Android 16 emulator (AVD `Alice`), on signet, `EmbeddedRuntimeTest` passes all 11 tests with
+two real `wavesigner` processes. Driving the sample through the validation list gave:
+
+1. Descriptor restore: `READY` in 42 s, fingerprint `5bf9f809`, identity `0309b8ec...9e649909`, the same
+   as the web, React Native and `wavelength-mobile` runs from those keys.
+2. Export: `tr(` and `wpkh(` lines with `tpub` keys only.
+3. Relaunch: `LOCKED`, and the password gives the same identity.
+4. Watch-only against `wavesigner`: `READY` in 34 s, the same identity. The signer's files are
+   `-rw-------` in a `drwx------` directory under `no_backup`.
+5. Signer stopped, background, foreground: `LOCKED`; Unlock fails in 35 s with the sample's signer message
+   and `connect to remote signer`. With the signer back, Unlock opens in 8 s.
+6. Bundle with another signer's credentials: refused in 36 s naming each slot, `LOCKED`. Corrected settings
+   from "Signer settings" open it in 6 s, with fingerprint `5bf9f809`.
+7. `prv` in about 21,000 lines of logcat: none. A malformed descriptor's error does not echo the key.
+
+`./gradlew check` passes, with new cases in `wavelength-core`, `wavelength-engine` and `wavelength-embedded`.
+Both envelopes were fed to the real Go parsers, `parseDescriptorWalletStartRequest` and
+`parseWatchOnlyWalletStartRequest`, with a throwaway test since deleted, and every field came through:
+data directory, signer settings, descriptors or bundle, password, birthday `2026-01-01`, identity, recovery
+flag and window, and for a manifest its authentication keys and identity override.
+
+Not verified:
+
+- Anything on iOS. `IosFacadeBindings.kt` and `IosEmbeddedRuntimeTest.kt` have never been compiled, SKIE's
+  output has not been read, and `walletBirthday` was added without seeing what SKIE does with `Instant`.
+- A manifest on the real runtime in this repository: only the client and the Go parser cover it here.
+  `wavelength-mobile` ran one on an emulator against the same daemon.
+- A real payment or Ark round through a signer.
+- `scripts/generate-models.sh --check` and every CI job, which cannot pass until the pin moves.
+
+Left to do: publish a `wavelength` release with this work, then follow Milestone 8 for the pin, the digests
+and every test tier, with iOS first on macOS. The Android bindings in `bindings/` are built from a local
+checkout, so they must be replaced. Release notes must say that an older SDK cannot read a profile list
+holding the two new `WalletKind` values.
 
 
 ## Context and Orientation
@@ -366,9 +470,11 @@ released binaries. Release through `RELEASE.md`.
 
 Run all of these from the repository root. `WAVELENGTH_DIR` is the sibling checkout on
 its `descriptors` branch. A source build of the bindings needs Go, gomobile, the Android
-SDK and NDK, and JDK 17 or newer.
+SDK and NDK, and JDK 17 or newer. gomobile finds the SDK only through `ANDROID_HOME`, not
+`local.properties`, and without it `make` fails while `scripts/fetch-bindings.sh` stages nothing.
 
     git switch -c descriptors
+    export ANDROID_HOME="$(sed -n 's/^sdk.dir=//p' local.properties)"
     export WAVELENGTH_DIR="$(cd ../wavelength && pwd)"
     scripts/fetch-bindings.sh android
     scripts/generate-models.sh
@@ -440,7 +546,7 @@ The envelope the facade expects, from `sdk/wavewalletdk/mobile/watchonly_wallet.
                  "remote_signer_macaroon_path": "/.../signer.macaroon",
                  "remote_signer_tls_cert_path": "/.../tls.cert"},
       "bundle": "...",
-      "wallet_password": "aHVudGVyMg==",
+      "wallet_password": "cGFzc3dvcmQx",
       "birthday_unix": 1767225600
     }
 
@@ -489,3 +595,7 @@ In `FacadeBindings.kt`:
 
 Revision note (2026-11-04): first version, written from the code at `master` here and
 the `descriptors` branch of `wavelength`.
+
+Revision note (2026-11-04): recorded the implementation through Milestone 7 and the documentation half of
+Milestone 8. Changed the sample password in the envelope to one that meets the daemon's minimum, and added
+`ANDROID_HOME` to the steps, because the first bindings build failed without it.

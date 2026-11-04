@@ -9,6 +9,8 @@ iOS twin (`IosEmbeddedRuntimeTest`).
 |-----------|-----------------------------|----------------|-------|
 | `Start` | `start(RuntimeConfig)` | `start` | client, device |
 | `StartExternalSeedWallet` | `startExternalSeedWallet` | `startExternalSeedWallet` | client |
+| `StartDescriptorWallet` | `startDescriptorWallet` | `startDescriptorWallet` | client, device |
+| `StartWatchOnlyWallet` | `startWatchOnlyWallet` | `startWatchOnlyWallet` | client, device (with a signer) |
 | `Stop` | `stop()` | `stop` | client, device |
 | `IsRunning` | `isRunning()` | `isRunning` | client |
 | `GetInfo` | `getInfo()` | `getInfo` | codec, client, device |
@@ -17,7 +19,8 @@ iOS twin (`IosEmbeddedRuntimeTest`).
 | `ConfirmedBalanceSat` | `confirmedBalanceSat()` | `callFacade` | client |
 | `PendingInboundSat` | `pendingInboundSat()` | `callFacade` | client |
 | `WalletReady` | `walletReady()` | `callFacade` | client |
-| `CreateWallet` | `createWallet`, `restoreWallet` | `createWallet` | codec, client, device |
+| `CreateWallet` | `createWallet`, `restoreWallet`, `restoreWalletFromDescriptors` | `createWallet` | codec, client, engine, device |
+| `ListWalletDescriptors` | `listWalletDescriptors` | `listWalletDescriptors` | client, engine, device |
 | `UnlockWallet` | `unlockWallet` | `unlockWallet` | client, device |
 | `OpenWalletFromPasskey` | `openWalletFromPasskey` | `openWalletFromPasskey` | client |
 | `Deposit` | `deposit` | `deposit` | engine |

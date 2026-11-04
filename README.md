@@ -11,6 +11,11 @@ process and no open network port. You drive it from shared Kotlin, using
 `suspend` functions, `Flow`s, typed models, and typed errors. The Swift
 API comes from the same code through SKIE.
 
+A wallet can come from a mnemonic, a passkey, host-derived entropy or private
+output descriptors. A watch-only wallet keeps its fund keys on a remote signer,
+so a lost phone cannot spend the funds. See the
+[API guide](docs/api-guide.md#11-descriptor-wallets).
+
 > Status: alpha.
 >
 > - **Android:** verified end to end on an emulator against signet.
@@ -72,6 +77,9 @@ scripts/fetch-bindings.sh            # stage and verify the pinned gomobile bind
 ./gradlew :samples:android:installDebug
 ```
 
+The device tests that need a remote signer skip themselves unless instrumentation
+arguments name one; `EmbeddedRuntimeTest` shows how.
+
 `wavelength.version` pins the daemon release. The library version, the
 bindings (checked against `bindings.digests`), and the generated models
 (`scripts/generate-models.sh`) all follow it. To move to a new release, see
@@ -95,6 +103,8 @@ bindings (checked against `bindings.digests`), and the generated models
 | `newDepositAddress()` | `deposit()` |
 | `prepareSend(invoice = …)` / `send(id)` | `prepareSend(SendRequest.Invoice(…))` / `sendPrepared(quote)` |
 | `WalletException` | typed `WavelengthException` subclasses |
+| `createWallet(descriptors = …)` | `createWallet(CreateWalletRequest(descriptors = …))` or `restoreWalletFromDescriptors` |
+| `createWallet(watchOnlyBundle = …)` and the `remote_signer_*` settings | `CreateWalletRequest(watchOnlyBundle = …)` and `RuntimeConfig.remoteSigner` |
 | `kind` / `status` strings | `EntryKind` / `EntryStatus` enums |
 
 ## License

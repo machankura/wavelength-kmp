@@ -55,6 +55,10 @@ client.unlockWallet("password".encodeToByteArray())   // later launches: the wal
 `info.walletState` is one of `NONE`, `LOCKED`, `SYNCING`, or `READY`.
 `info.walletReady` is true only for `READY`.
 
+A wallet can also come from private output descriptors or a remote signer:
+see [Descriptor wallets](#11-descriptor-wallets) and
+[Watch-only wallets](#12-watch-only-wallets).
+
 ## 4. Balance and activity
 
 ```kotlin
@@ -149,6 +153,21 @@ policy.bindToProcessLifecycle()       // Android; iOS: bindToApplicationLifecycl
 policy.restarts.collect { result -> promptUnlock() }   // the restarted wallet is LOCKED
 ```
 
+A wallet opened through `startDescriptorWallet` cannot be unlocked with a
+password, because its password is derived from the keys. Return through the
+verb that opened it instead:
+
+```kotlin
+val policy = BackgroundRestartPolicy.reopening(Wavelength.client, appScope) {
+    client.startDescriptorWallet(config, request)
+    client.getInfo()
+}
+```
+
+A watch-only wallet opens only while its signer answers, so the restart or the
+unlock after it can fail with `RemoteSignerFailed`. Show that and offer a
+retry; it is not a wrong password.
+
 ## 10. Passkey wallets
 
 A passkey can stand in for the mnemonic and password. The WebAuthn PRF
@@ -182,7 +201,144 @@ Failures are `PasskeyException`s:
 - `TimedOut`
 - `Failed`
 
-## 11. Several wallets
+## 11. Descriptor wallets
+
+A wallet can come from private output descriptors, for example ones exported
+from Bitcoin Core or another descriptor wallet, instead of a mnemonic. The
+daemon takes two forms: descriptors that share one master key, or account-level
+private keys covering the on-chain account and every key family, recognized by a
+key origin like `[fingerprint/86h/0h/0h]`.
+
+```kotlin
+import engineering.lightning.wavelength.CreateWalletRequest
+import engineering.lightning.wavelength.restoreWalletFromDescriptors
+import kotlin.time.Instant
+
+val descriptors = listOf(
+    "tr(tprv.../86h/0h/0h/<0;1>/*)#checksum",
+    "wpkh(tprv.../84h/0h/0h/<0;1>/*)#checksum",
+)
+client.start(config)
+val restored = client.restoreWalletFromDescriptors(
+    password = "at least 8 bytes".encodeToByteArray(),
+    descriptors = descriptors,
+    birthday = Instant.parse("2026-01-01T00:00:00Z"),   // bounds the first rescan; null scans from genesis
+)
+println(restored.rootFingerprint)
+```
+
+From Swift, the `walletBirthday` function in `Requests.kt` builds the birthday from
+Unix seconds. Later launches unlock with the password, as for any wallet. `restoreWalletFromDescriptors`
+runs a recovery scan; pass `CreateWalletRequest(descriptors = ...)` to
+`createWallet` to skip it.
+
+### One atomic start
+
+`startDescriptorWallet` boots the daemon and imports or unlocks the wallet in one
+call, for hosts that choose a data directory per wallet. The result is ready to
+use, with no readiness poll. The database password is derived from the keys, so
+no password exists to unlock with, and the host needs the descriptors on **every**
+open:
+
+```kotlin
+import engineering.lightning.wavelength.DescriptorWalletRequest
+
+val opened = client.startDescriptorWallet(
+    config,                                            // config.dataDir is required
+    DescriptorWalletRequest(descriptors, expectedIdentityPubKey = savedIdentity),
+)
+```
+
+### Export
+
+```kotlin
+import engineering.lightning.wavelength.ListWalletDescriptorsRequest
+
+val public = client.listWalletDescriptors()            // tr(...) and wpkh(...), no private keys
+```
+
+A private export takes the wallet's own mnemonic or root descriptors, which the
+daemon checks before rendering anything private. That is also how a watch-only
+wallet can export private descriptors, from keys you supply:
+
+```kotlin
+val private = client.listWalletDescriptors(
+    ListWalletDescriptorsRequest(includePrivate = true, descriptors = descriptors),
+)
+```
+
+`WalletEngine` has `listWalletDescriptors` too, and keeps no copy of the result.
+
+## 12. Watch-only wallets
+
+A watch-only wallet holds only public keys. A remote signer such as `wavesigner`
+holds the private keys and signs every fund spend, so a lost phone cannot spend
+the funds. The phone always dials out to the signer, and opens no port of its own.
+
+The signer exports a bundle. A minimal bundle also holds private "authentication"
+keys, used for routine Ark server authentication. On the signer's machine:
+
+```bash
+export WAVESIGNER_PASSWORD=...
+wavesigner --network=signet create --mnemonic-file wallet.mnemonic   # or --descriptor-file
+wavesigner --network=signet export-watchonly --output signer.bundle
+wavesigner --network=signet run --listen=0.0.0.0:10019 --tlsextraip=<address the phone dials>
+```
+
+`signer.macaroon` and `tls.cert` appear in `~/.wavesigner/signet/`. The daemon
+reads them by path on every start, so copy them into the app's own storage. On
+Android use `context.noBackupFilesDir`; a content URI is not a path.
+
+```kotlin
+import engineering.lightning.wavelength.CreateWalletRequest
+import engineering.lightning.wavelength.RemoteSignerConfig
+
+val signed = config.copy(
+    remoteSigner = RemoteSignerConfig(
+        rpcHost = "signer.example.com:10019",
+        macaroonPath = "$signerDir/signer.macaroon",
+        tlsCertPath = "$signerDir/tls.cert",
+    ),
+)
+client.start(signed)
+val created = client.createWallet(CreateWalletRequest("at least 8 bytes", watchOnlyBundle = bundleText))
+```
+
+Later launches start with the same config and unlock with the password. A wallet
+whose fund slots come from several keys uses `watchOnlyManifest` with its `authKeys`
+instead, and `info.manifestHash` then identifies the manifest it came from.
+
+`startWatchOnlyWallet(signed, WatchOnlyWalletRequest(password, bundle = bundleText))`
+does it all in one call, as `startDescriptorWallet` does. It needs the bundle or
+manifest and the password on every open.
+
+### When the signer is unavailable
+
+On every open the daemon has the signer sign a challenge with each key slot.
+Opening fails with `RemoteSignerFailed` if the signer does not answer, which took
+about 35 seconds on the default timeout on an emulator, or if it holds other keys.
+Treat this as "the signer is unavailable", not as a wrong password, and offer a
+retry. A first open can fail in two ways, and the retry differs:
+
+| What failed | State afterwards | Retry with |
+|-------------|------------------|------------|
+| The signer could not be reached | `NONE`: nothing was stored | `createWallet` |
+| The signer holds other keys, or something later failed, such as the chain backend | `LOCKED`: the database exists | `unlockWallet` |
+
+`WalletEngine` follows this for you: its phase stays `NEEDS_WALLET` in the first
+case and moves to `LOCKED` in the second. The atomic verbs handle both themselves,
+so repeat the same call. To correct a wrong signer in the `LOCKED` case, restart
+the daemon with the right `RemoteSignerConfig` and unlock.
+
+### Where secrets belong
+
+The SDK stores no descriptors, bundles, authentication keys or passwords, and
+`toString` on these requests hides them. Private descriptors are as sensitive as
+a seed, and a minimal bundle holds private keys too. Keep them in the Android
+Keystore or iOS Keychain, and keep them out of `WalletProfile`, which is persisted
+as plain text. Debug payload logging masks them, public descriptors included.
+
+## 13. Several wallets
 
 The daemon runs one wallet at a time. `WalletProfiles` keeps a list of the
 wallets on the device. Each wallet gets its own data directory under a
@@ -200,7 +356,13 @@ On iOS, use `UserDefaultsProfileStore()`. `EXTERNAL_SEED` profiles are
 opened with `startExternalSeedWallet(profile.config(base), request)`.
 Pinning `identityPubKey` after the first open is a good safeguard.
 
-## 12. Errors
+`DESCRIPTOR` and `WATCH_ONLY` profiles made through `createWallet` reopen with the
+password alone. Those opened through an atomic verb need that verb's whole request
+on every open, which the host must keep; see [Where secrets belong](#where-secrets-belong).
+An SDK older than these two kinds cannot read a profile list that contains them, so
+do not downgrade past them.
+
+## 14. Errors
 
 Every failure is a `WavelengthException` subtype. `code` matches the
 TypeScript SDK where the two overlap.
@@ -208,8 +370,12 @@ TypeScript SDK where the two overlap.
 | Type | When |
 |------|------|
 | `RuntimeNotReady` | A call was made before `start` (or after `stop`). |
-| `RuntimeActive` | An external-seed start while a runtime is active. |
+| `RuntimeActive` | An atomic wallet start while a runtime is active. |
 | `InvalidConfig`, `InvalidArgument`, `InvalidExternalSeed`, `InvalidCursor` | Rejected locally; nothing reached the daemon. |
+| `InvalidDescriptor` | Refused descriptors, locally or by the daemon, or an identity mismatch. |
+| `InvalidWatchOnly` | A refused bundle or manifest, locally or by the daemon, or a wallet that no longer matches it. Retrying will not help. |
+| `RemoteSignerFailed` | The signer could not be reached, or holds other keys. Offer a retry. |
+| `UnsupportedFacadeMethod` | A custom client cannot do what `WalletEngine` asked, such as export descriptors. |
 | `FailedPrecondition` | Wrong wallet state, for example a balance before a wallet exists. |
 | `InvalidSendIntent`, `AmountRequired`, `AmountInvalid`, `AmountExceedsVtxoLimit`, `BalanceLimitExceeded`, `InvalidDestination` | Send errors. |
 | `ReceiveOutcomeUncertain` | A receive timed out; reconcile before retrying. |
