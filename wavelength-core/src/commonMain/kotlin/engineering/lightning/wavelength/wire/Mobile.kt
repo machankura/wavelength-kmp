@@ -80,6 +80,27 @@ internal data class DescriptorWalletStartRequest(
     @SerialName("recovery_window") val recoveryWindow: Long? = null,
 )
 
+/**
+ * The StartWatchOnlyWallet envelope (`watchOnlyWalletStartRequest` in
+ * sdk/wavewalletdk/mobile/watchonly_wallet.go). `config` is the nested final
+ * [MobileConfig] and names the remote signer. The bundle or manifest is the
+ * signer's export as text; the authentication keys and a minimal bundle hold
+ * private keys, and the password is standard base64.
+ */
+@Serializable
+internal data class WatchOnlyWalletStartRequest(
+    @SerialName("config") val config: JsonElement,
+    @SerialName("bundle") val bundle: String? = null,
+    @SerialName("manifest") val manifest: String? = null,
+    @SerialName("auth_keys") val authKeys: String? = null,
+    @SerialName("override_identity") val overrideIdentity: Boolean? = null,
+    @SerialName("wallet_password") val walletPassword: ByteString,
+    @SerialName("birthday_unix") val birthdayUnix: Long? = null,
+    @SerialName("expected_identity_pubkey") val expectedIdentityPubKey: String? = null,
+    @SerialName("recover_state") val recoverState: Boolean? = null,
+    @SerialName("recovery_window") val recoveryWindow: Long? = null,
+)
+
 /** Receive with the mobile-only binding deadline (`mobileReceiveRequest`). */
 @Serializable
 internal data class MobileReceiveRequest(

@@ -10,7 +10,7 @@ import kotlin.time.Instant
 
 /**
  * Creates a wallet, restores one when [mnemonic] is set, or imports one when
- * [descriptors] are set.
+ * [descriptors] or a watch-only source are set.
  *
  * @property password Encrypts the seed on disk; needed again to unlock. At
  *   least 8 bytes (the daemon's minimum).
@@ -27,6 +27,15 @@ import kotlin.time.Instant
  * @property birthday The earliest time the [descriptors] may have received
  *   funds, bounding the first rescan. Null scans from genesis. Ignored for a
  *   mnemonic, which carries its own.
+ * @property watchOnlyBundle A watch-only wallet from a remote signer's export,
+ *   instead of a mnemonic or descriptors. Needs [RuntimeConfig.remoteSigner]. A
+ *   minimal bundle holds private authentication keys.
+ * @property watchOnlyManifest The JSON manifest of a signer whose fund slots
+ *   come from several keys, used instead of [watchOnlyBundle]. Needs [authKeys].
+ * @property authKeys The authentication private keys that go with
+ *   [watchOnlyManifest].
+ * @property overrideIdentity Allows a [watchOnlyManifest] that replaces the
+ *   identity family's key.
  */
 public class CreateWalletRequest(
     public val password: ByteArray,
@@ -36,6 +45,10 @@ public class CreateWalletRequest(
     public val recoveryWindow: Long? = null,
     public val descriptors: List<String> = emptyList(),
     public val birthday: Instant? = null,
+    public val watchOnlyBundle: String? = null,
+    public val watchOnlyManifest: String? = null,
+    public val authKeys: String? = null,
+    public val overrideIdentity: Boolean = false,
 ) {
     public constructor(
         password: String,
@@ -45,6 +58,10 @@ public class CreateWalletRequest(
         recoveryWindow: Long? = null,
         descriptors: List<String> = emptyList(),
         birthday: Instant? = null,
+        watchOnlyBundle: String? = null,
+        watchOnlyManifest: String? = null,
+        authKeys: String? = null,
+        overrideIdentity: Boolean = false,
     ) : this(
         password.encodeToByteArray(),
         mnemonic,
@@ -53,10 +70,34 @@ public class CreateWalletRequest(
         recoveryWindow,
         descriptors,
         birthday,
+        watchOnlyBundle,
+        watchOnlyManifest,
+        authKeys,
+        overrideIdentity,
     )
 
-    /** @throws WavelengthException.InvalidDescriptor */
+    /** Whether this request asks for a watch-only wallet. */
+    public val isWatchOnly: Boolean
+        get() = watchOnlyBundle != null || watchOnlyManifest != null || authKeys != null || overrideIdentity
+
+    /**
+     * @throws WavelengthException.InvalidDescriptor
+     * @throws WavelengthException.InvalidWatchOnly
+     */
     public fun validate() {
+        if (isWatchOnly) {
+            if (mnemonic.isNotEmpty() || seedPassphrase != null || descriptors.isNotEmpty()) {
+                throw WavelengthException.InvalidWatchOnly(
+                    "a watch-only wallet cannot also have a mnemonic, seedPassphrase or descriptors",
+                )
+            }
+            requireWatchOnlyKeys(
+                password, watchOnlyBundle, watchOnlyManifest, authKeys, overrideIdentity,
+                passwordName = "password", bundleName = "watchOnlyBundle", manifestName = "watchOnlyManifest",
+            )
+            requireImportOptions(birthday, null, recoveryWindow, WavelengthException::InvalidWatchOnly)
+            return
+        }
         if (descriptors.isEmpty()) return
         if (mnemonic.isNotEmpty() || seedPassphrase != null) {
             throw WavelengthException.InvalidDescriptor("descriptors cannot be combined with a mnemonic or seedPassphrase")
@@ -67,7 +108,7 @@ public class CreateWalletRequest(
 
     override fun toString(): String =
         "CreateWalletRequest(password=<redacted>, mnemonic=<${mnemonic.size} words>, " +
-            "descriptors=<${descriptors.size}>, birthday=$birthday, recoverState=$recoverState)"
+            "descriptors=<${descriptors.size}>, watchOnly=$isWatchOnly, birthday=$birthday, recoverState=$recoverState)"
 }
 
 /**
@@ -110,6 +151,31 @@ private fun requireDescriptors(descriptors: List<String>) {
     if (descriptors.isEmpty() || descriptors.any { it.isBlank() }) {
         throw WavelengthException.InvalidDescriptor("descriptors must be a nonempty list of nonblank strings")
     }
+}
+
+// The rules for a watch-only wallet's key material, whichever request carries it.
+// The names are how that request spells its fields, for its error messages.
+private fun requireWatchOnlyKeys(
+    password: ByteArray,
+    bundle: String?,
+    manifest: String?,
+    authKeys: String?,
+    overrideIdentity: Boolean,
+    passwordName: String,
+    bundleName: String,
+    manifestName: String,
+) {
+    val invalid = when {
+        password.size < MIN_WALLET_PASSWORD_BYTES -> "$passwordName must be at least $MIN_WALLET_PASSWORD_BYTES bytes"
+        bundle != null && bundle.isBlank() -> "$bundleName must not be blank"
+        manifest != null && manifest.isBlank() -> "$manifestName must not be blank"
+        authKeys != null && authKeys.isBlank() -> "authKeys must not be blank"
+        (bundle == null) == (manifest == null) -> "exactly one of $bundleName and $manifestName is required"
+        manifest != null && authKeys == null -> "a manifest requires its authKeys"
+        bundle != null && (authKeys != null || overrideIdentity) -> "authKeys and overrideIdentity apply only to a manifest"
+        else -> return
+    }
+    throw WavelengthException.InvalidWatchOnly(invalid)
 }
 
 // The options a wallet opened from imported keys shares across its lifecycles.
@@ -191,6 +257,53 @@ public class DescriptorWalletRequest(
     override fun toString(): String =
         "DescriptorWalletRequest(descriptors=<${descriptors.size}>, birthday=$birthday, " +
             "expectedIdentityPubKey=$expectedIdentityPubKey, recoverState=$recoverState)"
+}
+
+/**
+ * Material for [WatchOnlyWalletClient.startWatchOnlyWallet]: exactly one of
+ * [bundle] and [manifest], on every open. The source is imported into an empty
+ * data directory and, on later opens, pins the identity the wallet must have.
+ */
+public class WatchOnlyWalletRequest(
+    /**
+     * Protects the wallet database and any authentication keys it keeps. A
+     * watch-only wallet has no seed to derive it from, so the host supplies and
+     * keeps it. At least 8 bytes (the daemon's minimum).
+     */
+    public val walletPassword: ByteArray,
+    /** The signer's export, from `wavesigner export-watchonly`. A minimal bundle holds authentication private keys. */
+    public val bundle: String? = null,
+    /** The JSON manifest of a signer whose fund slots come from several keys. Needs [authKeys]. */
+    public val manifest: String? = null,
+    /** The authentication private keys that go with [manifest]. */
+    public val authKeys: String? = null,
+    /** Allows a [manifest] that replaces the identity family's key. */
+    public val overrideIdentity: Boolean = false,
+    /** The earliest time the keys may have received funds. Null scans from genesis. */
+    public val birthday: Instant? = null,
+    /**
+     * Pins the wallet identity persisted after first use; a mismatch fails. The
+     * daemon also always checks the wallet against the identity [bundle] or
+     * [manifest] implies.
+     */
+    public val expectedIdentityPubKey: String? = null,
+    /** Runs the (idempotent) recovery scan on this start. */
+    public val recoverState: Boolean = false,
+    public val recoveryWindow: Long? = null,
+) {
+    /** @throws WavelengthException.InvalidWatchOnly */
+    public fun validate() {
+        requireWatchOnlyKeys(
+            walletPassword, bundle, manifest, authKeys, overrideIdentity,
+            passwordName = "walletPassword", bundleName = "bundle", manifestName = "manifest",
+        )
+        requireImportOptions(birthday, expectedIdentityPubKey, recoveryWindow, WavelengthException::InvalidWatchOnly)
+    }
+
+    override fun toString(): String =
+        "WatchOnlyWalletRequest(walletPassword=<redacted>, source=${if (bundle != null) "bundle" else "manifest"}, " +
+            "overrideIdentity=$overrideIdentity, birthday=$birthday, expectedIdentityPubKey=$expectedIdentityPubKey, " +
+            "recoverState=$recoverState)"
 }
 
 /**
@@ -295,3 +408,6 @@ public data class SweepWalletRequest(
     val feeRateSatPerVByte: Long? = null,
     val confTarget: Long? = null,
 )
+
+// The daemon's minimum wallet password length (ValidateWalletPassword in waved).
+internal const val MIN_WALLET_PASSWORD_BYTES: Int = 8

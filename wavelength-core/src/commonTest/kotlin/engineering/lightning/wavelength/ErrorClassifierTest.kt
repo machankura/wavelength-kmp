@@ -62,6 +62,10 @@ class ErrorClassifierTest {
     @Test
     fun watchOnlyErrors() {
         for (message in listOf(
+            "a watch-only manifest needs auth_keys",
+            "a watch-only bundle needs wallet.remotesigner, since this daemon would hold no key to sign with",
+            "wallet.remotesigner is enabled, so the wallet must be created from a watch-only bundle: " +
+                "its private keys belong on the signer",
             "invalid watch-only bundle: bad checksum",
             "invalid manifest: unexpected end of JSON input",
             "invalid authentication keys: bad length",

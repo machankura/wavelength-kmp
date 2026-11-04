@@ -31,6 +31,7 @@ import engineering.lightning.wavelength.model.Status
 import engineering.lightning.wavelength.model.UnlockWalletResult
 import engineering.lightning.wavelength.model.VTXOInventory
 import engineering.lightning.wavelength.model.WalletState
+import engineering.lightning.wavelength.model.WatchOnlyWalletOpenResult
 import kotlin.time.Clock
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
@@ -73,6 +74,7 @@ public class FakeFacadeBindings(
     private var running = false
     private var walletState = initialState
     private var password: String? = null
+    private var manifestHash = ""
     private var confirmedSat = initialConfirmedSat
     private var pendingInSat = 0L
     private var blockHeight = 100_000L
@@ -95,6 +97,9 @@ public class FakeFacadeBindings(
         "tr([5bf9f809/86h/0h/0h]tpubFake86/<0;1>/*)#fake86",
         "wpkh([5bf9f809/84h/0h/0h]tpubFake84/<0;1>/*)#fake84",
     )
+
+    /** The hash reported for a watch-only wallet created from a manifest. */
+    public val fakeManifestHash: String = "cd".repeat(32)
 
     /** Scripts GetExitPlan: receives the requested outpoints. */
     public var exitPlanHandler: ((List<String>) -> GetExitPlanResult)? = null
@@ -206,6 +211,42 @@ public class FakeFacadeBindings(
         )
     }
 
+    override fun startWatchOnlyWallet(request: ByteArray): ByteArray = synchronized(lock) {
+        val body = request.decodeToString()
+        record("startWatchOnlyWallet", body)
+        check(!running) { "wavewalletdk mobile already started" }
+        val obj = json.parseToJsonElement(body).jsonObject
+        val config = obj["config"]!!.jsonObject
+        if (config.string("remote_signer_rpc_host").isNullOrEmpty()) {
+            error("config.remote_signer_rpc_host is required for a watch-only wallet")
+        }
+        val pinned = obj.string("expected_identity_pubkey")
+        if (pinned != null && pinned != identityPubKey) {
+            error("watch-only wallet identity mismatch: request gives $pinned, wallet has $identityPubKey")
+        }
+        val imported = walletState == WalletState.NONE
+        if (imported) {
+            password = obj.string("wallet_password")
+            manifestHash = if (obj.string("manifest") != null) fakeManifestHash else ""
+        } else if (obj.string("wallet_password") != password) {
+            error("invalid passphrase for master public key")
+        }
+        lastConfigJson = config.toString()
+        running = true
+        walletState = WalletState.READY
+        encode(
+            WatchOnlyWalletOpenResult.serializer(),
+            WatchOnlyWalletOpenResult(
+                imported = imported,
+                identityPubKey = identityPubKey,
+                rootFingerprint = rootFingerprint,
+                manifestHash = manifestHash,
+                descriptors = publicDescriptors,
+                recoveryRan = obj.bool("recover_state"),
+            ),
+        )
+    }
+
     override fun stop() {
         val subs = synchronized(lock) {
             record("stop", "")
@@ -290,8 +331,13 @@ public class FakeFacadeBindings(
         FacadeVerb.CREATE_WALLET -> {
             if (walletState != WalletState.NONE) precondition("wallet already exists")
             val mnemonic = req.strings("Mnemonic")
-            val freshSeed = mnemonic.isEmpty() && req.strings("Descriptors").isEmpty()
+            val watchOnly = req.string("WatchOnlyBundle") != null || req.string("WatchOnlyManifest") != null
+            if (watchOnly && lastConfigJson?.contains("remote_signer_rpc_host") != true) {
+                error("a watch-only bundle needs wallet.remotesigner, since this daemon would hold no key to sign with")
+            }
+            val freshSeed = mnemonic.isEmpty() && req.strings("Descriptors").isEmpty() && !watchOnly
             password = req.string("WalletPassword")
+            manifestHash = if (req.string("WatchOnlyManifest") != null) fakeManifestHash else ""
             walletState = WalletState.READY
             encode(
                 CreateWalletResult.serializer(),
@@ -300,6 +346,7 @@ public class FakeFacadeBindings(
                     identityPubKey = identityPubKey,
                     rootFingerprint = rootFingerprint,
                     descriptors = publicDescriptors,
+                    manifestHash = manifestHash,
                     recoveryRan = req.bool("RecoverState"),
                 ),
             ) to null
@@ -424,6 +471,7 @@ public class FakeFacadeBindings(
         walletType = "lwwallet",
         walletState = walletState,
         identityPubKey = if (walletState == WalletState.NONE) "" else identityPubKey,
+        manifestHash = manifestHash,
     )
 
     private fun balance() = Balance(confirmedSat = confirmedSat, pendingInSat = pendingInSat)

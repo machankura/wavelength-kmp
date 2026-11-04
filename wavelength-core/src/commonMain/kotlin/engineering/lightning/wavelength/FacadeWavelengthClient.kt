@@ -22,6 +22,7 @@ import engineering.lightning.wavelength.model.SendResult
 import engineering.lightning.wavelength.model.Status
 import engineering.lightning.wavelength.model.SweepWalletResult
 import engineering.lightning.wavelength.model.UnlockWalletResult
+import engineering.lightning.wavelength.model.WatchOnlyWalletOpenResult
 import engineering.lightning.wavelength.wire.DepositRequest
 import engineering.lightning.wavelength.wire.DescriptorWalletStartRequest
 import engineering.lightning.wavelength.wire.ExitStatusRequest
@@ -35,6 +36,7 @@ import engineering.lightning.wavelength.wire.PrepareSendRequest
 import engineering.lightning.wavelength.wire.SendPreparedRequest
 import engineering.lightning.wavelength.wire.SubscribeRequest
 import engineering.lightning.wavelength.wire.UnlockWalletRequest
+import engineering.lightning.wavelength.wire.WatchOnlyWalletStartRequest
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -163,6 +165,37 @@ public class FacadeWavelengthClient(
         )
     }
 
+    override suspend fun startWatchOnlyWallet(
+        config: RuntimeConfig,
+        request: WatchOnlyWalletRequest,
+    ): WatchOnlyWalletOpenResult {
+        config.validate()
+        request.validate()
+        if (config.dataDir.isNullOrBlank()) {
+            throw WavelengthException.InvalidConfig("startWatchOnlyWallet requires a final nonempty dataDir")
+        }
+        if (config.remoteSigner == null) {
+            throw WavelengthException.InvalidConfig("startWatchOnlyWallet requires config.remoteSigner")
+        }
+        val envelope = WatchOnlyWalletStartRequest(
+            config = WireJson.encodeToJsonElement(MobileConfig.serializer(), config.toWire()),
+            bundle = request.bundle,
+            manifest = request.manifest,
+            authKeys = request.authKeys,
+            overrideIdentity = request.overrideIdentity.takeIf { it },
+            walletPassword = ByteString.of(request.walletPassword),
+            birthdayUnix = request.birthday?.epochSeconds,
+            expectedIdentityPubKey = request.expectedIdentityPubKey,
+            recoverState = request.recoverState.takeIf { it },
+            recoveryWindow = request.recoveryWindow,
+        )
+        return startAtomically(
+            encode(WatchOnlyWalletStartRequest.serializer(), envelope),
+            WatchOnlyWalletOpenResult.serializer(),
+            bindings::startWatchOnlyWallet,
+        )
+    }
+
     /** Runs an atomic wallet start, always zeroing its secret-bearing [request]. */
     private suspend fun <Res> startAtomically(
         request: ByteArray,
@@ -241,6 +274,10 @@ public class FacadeWavelengthClient(
             recoveryWindow = request.recoveryWindow ?: 0,
             descriptors = request.descriptors,
             birthday = request.birthday,
+            watchOnlyBundle = request.watchOnlyBundle.toWireBytes(),
+            watchOnlyManifest = request.watchOnlyManifest.toWireBytes(),
+            authKeys = request.authKeys.toWireBytes(),
+            overrideIdentity = request.overrideIdentity,
         )
         return call(FacadeVerb.CREATE_WALLET, WireCreateWalletRequest.serializer(), wire, CreateWalletResult.serializer())
     }
@@ -505,6 +542,8 @@ public class FacadeWavelengthClient(
         _events.tryEmit(WavelengthEvent.Log(level, message))
     }
 
+    private fun String?.toWireBytes(): ByteString = this?.let { ByteString.of(it.encodeToByteArray()) } ?: ByteString.EMPTY
+
     private fun requireNonNegative(name: String, value: Long) {
         if (value < 0) throw WavelengthException.InvalidArgument("$name must not be negative")
     }
@@ -517,7 +556,7 @@ public class FacadeWavelengthClient(
         public const val MAX_RECEIVE_TIMEOUT_SECONDS: Long = 300
 
         /** The daemon's minimum wallet password length. */
-        public const val MIN_PASSWORD_BYTES: Int = 8
+        public const val MIN_PASSWORD_BYTES: Int = MIN_WALLET_PASSWORD_BYTES
 
         /** WebAuthn PRF output size. */
         public const val PRF_OUTPUT_SIZE: Int = 32

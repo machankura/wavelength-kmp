@@ -16,6 +16,9 @@ internal object AndroidFacadeBindings : FacadeBindings {
     override fun startDescriptorWallet(request: ByteArray): ByteArray =
         Mobile.startDescriptorWallet(request).orEmpty()
 
+    override fun startWatchOnlyWallet(request: ByteArray): ByteArray =
+        Mobile.startWatchOnlyWallet(request).orEmpty()
+
     override fun stop(): Unit = Mobile.stop()
 
     override fun isRunning(): Boolean = Mobile.isRunning()

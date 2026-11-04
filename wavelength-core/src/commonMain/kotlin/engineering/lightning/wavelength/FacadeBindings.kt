@@ -23,6 +23,9 @@ public interface FacadeBindings {
     /** Atomically boots the daemon and imports or unlocks a descriptor wallet. */
     public fun startDescriptorWallet(request: ByteArray): ByteArray
 
+    /** Atomically boots the daemon and imports or unlocks a watch-only wallet. */
+    public fun startWatchOnlyWallet(request: ByteArray): ByteArray
+
     /** Tears the daemon down. Idempotent. */
     public fun stop()
 

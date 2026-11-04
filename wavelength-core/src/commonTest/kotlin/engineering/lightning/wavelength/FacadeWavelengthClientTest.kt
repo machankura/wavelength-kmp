@@ -413,6 +413,169 @@ class FacadeWavelengthClientTest {
         assertTrue("descriptors=<1>" in text, text)
     }
 
+    private val signed = config.copy(remoteSigner = RemoteSignerConfig("10.0.2.2:10019", "/s/signer.macaroon", "/s/tls.cert"))
+
+    @Test
+    fun watchOnlyBundleStartPinsTheEnvelope() = realTimeTest {
+        val request = WatchOnlyWalletRequest(
+            walletPassword = "password1".encodeToByteArray(),
+            bundle = "bundle text",
+            birthday = Instant.fromEpochSeconds(1_767_225_600),
+            expectedIdentityPubKey = bindings.identityPubKey,
+            recoverState = true,
+            recoveryWindow = 2500,
+        )
+        val result = client.startWatchOnlyWallet(signed, request)
+        assertTrue(result.imported)
+        assertEquals("", result.manifestHash)
+        assertEquals(bindings.publicDescriptors, result.descriptors)
+        assertTrue(client.walletReady())
+        assertEquals(
+            """{"config":{"data_dir":"/tmp/w","network":"regtest","server_transport":"grpc","wallet_type":"lwwallet",""" +
+                """"swap_server_transport":"grpc","remote_signer_rpc_host":"10.0.2.2:10019",""" +
+                """"remote_signer_macaroon_path":"/s/signer.macaroon","remote_signer_tls_cert_path":"/s/tls.cert"},""" +
+                """"bundle":"bundle text","wallet_password":"${Base64.encode("password1".encodeToByteArray())}",""" +
+                """"birthday_unix":1767225600,"expected_identity_pubkey":"${bindings.identityPubKey}",""" +
+                """"recover_state":true,"recovery_window":2500}""",
+            bindings.requests.first().second,
+        )
+    }
+
+    @Test
+    fun watchOnlyManifestStartPinsTheEnvelope() = realTimeTest {
+        val request = WatchOnlyWalletRequest(
+            walletPassword = "password1".encodeToByteArray(),
+            manifest = "{}",
+            authKeys = "keys",
+            overrideIdentity = true,
+        )
+        val result = client.startWatchOnlyWallet(signed, request)
+        assertEquals(bindings.fakeManifestHash, result.manifestHash)
+        assertEquals(bindings.fakeManifestHash, client.getInfo().manifestHash)
+        val body = Json.parseToJsonElement(bindings.requests.first().second).jsonObject
+        assertEquals("{}", body["manifest"]?.jsonPrimitive?.content)
+        assertEquals("keys", body["auth_keys"]?.jsonPrimitive?.content)
+        assertEquals("true", body["override_identity"]?.jsonPrimitive?.content)
+        assertNull(body["bundle"])
+    }
+
+    @Test
+    fun watchOnlyStartValidation() = realTimeTest {
+        val password = "password1".encodeToByteArray()
+        listOf(
+            WatchOnlyWalletRequest(ByteArray(0), bundle = "b"),
+            WatchOnlyWalletRequest("short".encodeToByteArray(), bundle = "b"),
+            WatchOnlyWalletRequest(password),
+            WatchOnlyWalletRequest(password, bundle = "b", manifest = "m", authKeys = "k"),
+            WatchOnlyWalletRequest(password, bundle = " "),
+            WatchOnlyWalletRequest(password, manifest = "m"),
+            WatchOnlyWalletRequest(password, manifest = "m", authKeys = " "),
+            WatchOnlyWalletRequest(password, bundle = "b", authKeys = "k"),
+            WatchOnlyWalletRequest(password, bundle = "b", overrideIdentity = true),
+            WatchOnlyWalletRequest(password, bundle = "b", birthday = Instant.fromEpochSeconds(-1)),
+            WatchOnlyWalletRequest(password, bundle = "b", expectedIdentityPubKey = ""),
+            WatchOnlyWalletRequest(password, bundle = "b", recoveryWindow = -1),
+        ).forEach {
+            assertFailsWith<WavelengthException.InvalidWatchOnly>("$it") { client.startWatchOnlyWallet(signed, it) }
+        }
+        val valid = WatchOnlyWalletRequest(password, bundle = "b")
+        assertFailsWith<WavelengthException.InvalidConfig> { client.startWatchOnlyWallet(config, valid) }
+        assertFailsWith<WavelengthException.InvalidConfig> {
+            client.startWatchOnlyWallet(signed.copy(dataDir = null), valid)
+        }
+        assertFailsWith<WavelengthException.InvalidConfig> {
+            client.startWatchOnlyWallet(signed.copy(remoteSigner = RemoteSignerConfig(" ", "/m", "/c")), valid)
+        }
+        assertTrue(bindings.requests.isEmpty())
+    }
+
+    @Test
+    fun watchOnlyStartReopensAndRefusesWhileRunning() = realTimeTest {
+        val request = WatchOnlyWalletRequest("password1".encodeToByteArray(), bundle = "b")
+        assertTrue(client.startWatchOnlyWallet(signed, request).imported)
+        assertFailsWith<WavelengthException.RuntimeActive> { client.startWatchOnlyWallet(signed, request) }
+        client.stop()
+        assertFalse(client.startWatchOnlyWallet(signed, request).imported)
+    }
+
+    @Test
+    fun aDeadSignerIsNotAWrongPassword() = realTimeTest {
+        bindings.failNext("startWatchOnlyWallet", "start watch-only wallet: connect to remote signer: refused")
+        val e = assertFailsWith<WavelengthException.RemoteSignerFailed> {
+            client.startWatchOnlyWallet(signed, WatchOnlyWalletRequest("password1".encodeToByteArray(), bundle = "b"))
+        }
+        assertEquals("remote_signer_failed", e.code)
+        assertEquals(RuntimeLifecycle.STOPPED, client.lifecycle.value)
+    }
+
+    @Test
+    fun watchOnlyCreateThenUnlock() = realTimeTest {
+        client.start(signed)
+        val created = client.createWallet(CreateWalletRequest("password1", watchOnlyBundle = "bundle text"))
+        assertEquals(emptyList(), created.mnemonic)
+        assertEquals(bindings.publicDescriptors, created.descriptors)
+        val body = Json.parseToJsonElement(bindings.requests.last { it.first == "createWallet" }.second).jsonObject
+        assertEquals(Base64.encode("bundle text".encodeToByteArray()), body["WatchOnlyBundle"]?.jsonPrimitive?.content)
+        assertNull(body["Mnemonic"])
+
+        client.stop()
+        client.start(signed)
+        client.unlockWallet("password1".encodeToByteArray())
+        assertTrue(client.walletReady())
+    }
+
+    @Test
+    fun watchOnlyManifestCreateSendsItsFields() = realTimeTest {
+        client.start(signed)
+        val created = client.createWallet(
+            CreateWalletRequest("password1", watchOnlyManifest = "{}", authKeys = "keys", overrideIdentity = true),
+        )
+        assertEquals(bindings.fakeManifestHash, created.manifestHash)
+        val body = Json.parseToJsonElement(bindings.requests.last { it.first == "createWallet" }.second).jsonObject
+        assertEquals(Base64.encode("{}".encodeToByteArray()), body["WatchOnlyManifest"]?.jsonPrimitive?.content)
+        assertEquals(Base64.encode("keys".encodeToByteArray()), body["AuthKeys"]?.jsonPrimitive?.content)
+        assertEquals("true", body["OverrideIdentity"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun watchOnlyCreateValidation() = realTimeTest {
+        client.start(signed)
+        listOf(
+            CreateWalletRequest("password1", watchOnlyBundle = "b", mnemonic = listOf("word")),
+            CreateWalletRequest("password1", watchOnlyBundle = "b", seedPassphrase = "pass"),
+            CreateWalletRequest("password1", watchOnlyBundle = "b", descriptors = listOf("tr(tprv1)")),
+            CreateWalletRequest("password1", watchOnlyBundle = "b", watchOnlyManifest = "m", authKeys = "k"),
+            CreateWalletRequest("password1", watchOnlyManifest = "m"),
+            CreateWalletRequest("password1", watchOnlyBundle = "b", authKeys = "k"),
+            CreateWalletRequest("password1", watchOnlyBundle = "b", overrideIdentity = true),
+            CreateWalletRequest("password1", authKeys = "k"),
+            CreateWalletRequest("password1", overrideIdentity = true),
+            CreateWalletRequest("password1", watchOnlyBundle = " "),
+            CreateWalletRequest("password1", watchOnlyBundle = "b", birthday = Instant.fromEpochSeconds(-1)),
+        ).forEach {
+            assertFailsWith<WavelengthException.InvalidWatchOnly>("$it") { client.createWallet(it) }
+        }
+        assertEquals(0, bindings.requests.count { it.first == "createWallet" })
+    }
+
+    @Test
+    fun watchOnlyCreateWithoutASignerIsTyped() = realTimeTest {
+        client.start(config)
+        assertFailsWith<WavelengthException.InvalidWatchOnly> {
+            client.createWallet(CreateWalletRequest("password1", watchOnlyBundle = "b"))
+        }
+    }
+
+    @Test
+    fun watchOnlyRequestsHideTheirKeys() {
+        val start = WatchOnlyWalletRequest("hunter2hunter2".encodeToByteArray(), manifest = "MANIFEST", authKeys = "AUTHKEY").toString()
+        val create = CreateWalletRequest("hunter2hunter2", watchOnlyBundle = "BUNDLE").toString()
+        listOf("hunter2", "MANIFEST", "AUTHKEY", "BUNDLE").forEach { secret ->
+            assertFalse(secret in start, start)
+            assertFalse(secret in create, create)
+        }
+    }
+
     @Test
     fun createWalletRequestHidesItsKeys() {
         val text = CreateWalletRequest("hunter2hunter2", descriptors = listOf("tr(tprvSECRET)")).toString()

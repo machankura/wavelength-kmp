@@ -24,6 +24,7 @@ import engineering.lightning.wavelength.model.SweepWalletResult
 import engineering.lightning.wavelength.model.UnlockWalletResult
 import engineering.lightning.wavelength.model.VTXOInventory
 import engineering.lightning.wavelength.model.WalletState
+import engineering.lightning.wavelength.model.WatchOnlyWalletOpenResult
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
@@ -182,8 +183,29 @@ public interface DescriptorWalletClient : WavelengthClient {
     ): ListWalletDescriptorsResult
 }
 
+/** A client that can also open a wallet whose fund keys live on a remote signer. */
+public interface WatchOnlyWalletClient : WavelengthClient {
+    /**
+     * Boots the daemon at [RuntimeConfig.dataDir] (required: the final
+     * per-wallet directory) with [RuntimeConfig.remoteSigner] (required), and
+     * imports or unlocks the wallet in one step. On success the wallet is ready;
+     * no readiness poll is needed.
+     *
+     * Every open has the signer sign a challenge with each key, so this fails
+     * with [WavelengthException.RemoteSignerFailed] when the signer is
+     * unreachable or holds other keys. That is not a wrong password: show it and
+     * offer a retry.
+     *
+     * @throws WavelengthException.RuntimeActive if a daemon is already running.
+     */
+    public suspend fun startWatchOnlyWallet(
+        config: RuntimeConfig,
+        request: WatchOnlyWalletRequest,
+    ): WatchOnlyWalletOpenResult
+}
+
 /** A client with every way this SDK has of opening a wallet. */
-public interface EmbeddedWavelengthClient : ExternalSeedWalletClient, DescriptorWalletClient
+public interface EmbeddedWavelengthClient : ExternalSeedWalletClient, DescriptorWalletClient, WatchOnlyWalletClient
 
 /** The outcome of a dispatched send. */
 public data class SendOutcome(
