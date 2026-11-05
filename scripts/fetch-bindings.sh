@@ -161,7 +161,11 @@ install_maven() {
 	local dir="${OUT}/maven/engineering/lightning/wavelength/wavelength-bindings-android/${version}"
 	local base="${dir}/wavelength-bindings-android-${version}"
 	mkdir -p "${dir}"
-	cp "${aar}" "${base}.aar"
+	# A build may be reading this file, so it is replaced only when it differs, and in one step.
+	if ! cmp -s "${aar}" "${base}.aar"; then
+		cp "${aar}" "${base}.aar.part"
+		mv "${base}.aar.part" "${base}.aar"
+	fi
 	cat > "${base}.pom" <<POM
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0">
