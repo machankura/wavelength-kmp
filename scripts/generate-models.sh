@@ -4,9 +4,11 @@
 # from the pinned wavelength release's sdk/wavewalletdk/types.go, and the golden
 # JSON fixtures (tools/go-fixtures) that the codec tests decode.
 #
-# The source comes from the release's wavelength-source-<tag>.tar.gz, checked
-# against the SHA-256 listed in that release's manifest-<tag>.txt. Set
-# WAVELENGTH_DIR to read types.go from a local checkout instead (unpinned).
+# The source is the daemon nested at experimental/wavelength, whose gitlink is the
+# pin (docs/adr/0006-daemon-source.md). Set WAVELENGTH_DIR to read types.go from
+# another checkout. With neither, it comes from the release's
+# wavelength-source-<tag>.tar.gz, checked against the SHA-256 listed in that
+# release's manifest-<tag>.txt.
 #
 # Usage:
 #   scripts/generate-models.sh           # rewrite the generated sources
@@ -16,7 +18,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TAG="${WAVELENGTH_VERSION:-$(tr -d '[:space:]' < "${ROOT}/wavelength.version")}"
-REPO="${WAVELENGTH_REPO:-lightninglabs/wavelength}"
+REPO="${WAVELENGTH_REPO:-machankura/wavelength}"
+if [[ -z "${WAVELENGTH_DIR:-}" && -f "${ROOT}/experimental/wavelength/sdk/wavewalletdk/types.go" ]]; then
+	WAVELENGTH_DIR="${ROOT}/experimental/wavelength"
+fi
 KOTLIN_ROOT="${ROOT}/wavelength-core/src/commonMain/kotlin"
 FIXTURES="engineering/lightning/wavelength/GoFixtures.kt"
 TEST_ROOT="${ROOT}/wavelength-core/src/commonTest/kotlin"

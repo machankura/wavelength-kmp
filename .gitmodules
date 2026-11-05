@@ -1,0 +1,4 @@
+[submodule "experimental/wavelength"]
+	path = experimental/wavelength
+	url = https://github.com/machankura/wavelength.git
+	branch = descriptors

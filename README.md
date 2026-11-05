@@ -66,12 +66,13 @@ and the sample in [samples/android](samples/android).
 Requirements:
 
 - JDK 17 or newer
-- the Android SDK (`local.properties` or `ANDROID_HOME`)
-- Go 1.25 or newer, to regenerate models
+- the Android SDK (`local.properties` or `ANDROID_HOME`) and NDK
+- Go, at the daemon's `go.mod` version or able to fetch that toolchain, and `gomobile`
 - macOS with Xcode, for the iOS targets only
 
 ```bash
-scripts/fetch-bindings.sh            # stage and verify the pinned gomobile bindings
+git submodule update --init          # the daemon, machankura/wavelength
+scripts/fetch-bindings.sh android    # build the pinned gomobile bindings from it
 ./gradlew check                      # JVM and Android host tests; also compiles the iOS klibs on Linux
 ./gradlew :wavelength-embedded:connectedAndroidDeviceTest   # real runtime on a device or emulator
 ./gradlew :samples:android:installDebug
@@ -80,9 +81,11 @@ scripts/fetch-bindings.sh            # stage and verify the pinned gomobile bind
 The device tests that need a remote signer skip themselves unless instrumentation
 arguments name one; `EmbeddedRuntimeTest` shows how.
 
-`wavelength.version` pins the daemon release. The library version, the
-bindings (checked against `bindings.digests`), and the generated models
-(`scripts/generate-models.sh`) all follow it. To move to a new release, see
+The daemon is [machankura/wavelength](https://github.com/machankura/wavelength),
+nested at `experimental/wavelength`, because descriptor wallets exist only there
+([ADR 0006](docs/adr/0006-daemon-source.md)). Its gitlink pins the source, and
+`wavelength.version` names the library version and the release a download would
+use. The bindings and the generated models (`scripts/generate-models.sh`) all follow it. To move to a new release, see
 [docs/daemon-sync.md](docs/daemon-sync.md). To publish one, see
 [RELEASE.md](RELEASE.md).
 

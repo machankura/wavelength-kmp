@@ -11,11 +11,14 @@
 # how wavelength-embedded resolves it (the same coordinate it is published
 # under; see docs/adr/0005-android-binary-packaging.md).
 #
-# By default it downloads the release assets that wavelength CI attaches to
-# every v* tag (the repository is public, so no credentials are needed). Set
-# WAVELENGTH_DIR to a local wavelength checkout to build them from source with
-# `make mobile-android` / `make mobile-ios` instead (needs Go, gomobile, the
-# Android NDK, and macOS + Xcode for iOS).
+# The daemon is machankura/wavelength, nested at experimental/wavelength: its
+# gitlink is the pin, and descriptor wallets exist nowhere else
+# (docs/adr/0006-daemon-source.md). With that submodule checked out the bindings
+# are built from it with `make mobile-android` / `make mobile-ios` (needs Go,
+# gomobile, the Android NDK, and macOS + Xcode for iOS), and a build for the
+# commit already staged is reused. Set WAVELENGTH_DIR to build from another
+# checkout. With neither, it downloads the release assets attached to the tag in
+# wavelength.version.
 #
 # Downloads are verified against bindings.digests. After an intentional pin
 # bump, run with --update-digests to record the new digests, and review them.
@@ -27,8 +30,12 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TAG="${WAVELENGTH_VERSION:-$(tr -d '[:space:]' < "${ROOT}/wavelength.version")}"
-REPO="${WAVELENGTH_REPO:-lightninglabs/wavelength}"
+REPO="${WAVELENGTH_REPO:-machankura/wavelength}"
 OUT="${ROOT}/bindings"
+NESTED="${ROOT}/experimental/wavelength"
+if [[ -z "${WAVELENGTH_DIR:-}" && -d "${NESTED}/sdk/wavewalletdk/mobile" ]]; then
+	WAVELENGTH_DIR="${NESTED}"
+fi
 DIGESTS="${ROOT}/bindings.digests"
 
 target="all"
@@ -86,13 +93,43 @@ download() {
 	curl --fail --location --retry 3 --silent --show-error -o "${dest}" "${url}"
 }
 
+# source_id names the source tree: its commit, marked when it has local changes
+# so that a dirty build is never reused as if it were the commit.
+source_id() {
+	local commit
+	commit="$(git -C "${WAVELENGTH_DIR}" rev-parse HEAD)"
+	if [[ -n "$(git -C "${WAVELENGTH_DIR}" status --porcelain)" ]]; then
+		echo "${commit}-dirty-$(date +%s)"
+	else
+		echo "${commit}"
+	fi
+}
+
+# android_home finds the SDK for gomobile, which reads only the environment: a
+# local.properties here, or in the build this one is included in.
+android_home() {
+	local props dir="${ROOT}"
+	while [[ "${dir}" != "/" ]]; do
+		props="${dir}/local.properties"
+		if [[ -f "${props}" ]]; then
+			sed -n 's/^sdk.dir=//p' "${props}"
+			return
+		fi
+		dir="$(dirname "${dir}")"
+	done
+}
+
 build_from_source() {
 	local make_target="$1"
 	if [[ ! -d "${WAVELENGTH_DIR}/sdk/wavewalletdk/mobile" ]]; then
 		echo "error: wavelength checkout not found at ${WAVELENGTH_DIR}" >&2
 		exit 1
 	fi
-	echo "==> building ${make_target} in ${WAVELENGTH_DIR} (unpinned local source)"
+	if [[ -z "${ANDROID_HOME:-}" ]]; then
+		ANDROID_HOME="$(android_home)"
+		export ANDROID_HOME
+	fi
+	echo "==> building ${make_target} in ${WAVELENGTH_DIR} at $(source_id)"
 	(cd "${WAVELENGTH_DIR}" && make "${make_target}")
 }
 
@@ -100,8 +137,15 @@ fetch_android() {
 	mkdir -p "${OUT}/android"
 	local dest="${OUT}/android/Wavewalletdk.aar"
 	if [[ -n "${WAVELENGTH_DIR:-}" ]]; then
-		build_from_source mobile-android
-		cp "${WAVELENGTH_DIR}/sdk/wavewalletdk/mobile/build/android/Wavewalletdk.aar" "${dest}"
+		local id stamp="${OUT}/android/SOURCE"
+		id="$(source_id)"
+		if [[ -f "${dest}" && -f "${stamp}" && "$(cat "${stamp}")" == "${id}" ]]; then
+			echo "==> ${dest} is already built from ${id}"
+		else
+			build_from_source mobile-android
+			cp "${WAVELENGTH_DIR}/sdk/wavewalletdk/mobile/build/android/Wavewalletdk.aar" "${dest}"
+			echo "${id}" > "${stamp}"
+		fi
 	else
 		download Wavewalletdk.aar "${dest}.part"
 		verify Wavewalletdk.aar "${dest}.part"
