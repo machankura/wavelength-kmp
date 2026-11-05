@@ -396,10 +396,11 @@ public class FakeFacadeBindings(
             if (invoice.isEmpty() == address.isEmpty()) error("send destination must set invoice or onchain_address")
             val invoiceAmount = (Destination.classify(invoice) as? Destination.Invoice)
                 ?.let { (it.amount as? InvoiceAmount.Known)?.sat }
+            val fee = if (invoice.isNotEmpty()) 2L else 150L
+            // A sweep pays its fee out of what it moves, or it could never be sent.
             val amount = req.long("AmountSat").takeIf { it > 0 }
                 ?: invoiceAmount
-                ?: if (req.bool("SweepAll")) confirmedSat else error("amt_sat is required for the requested send")
-            val fee = if (invoice.isNotEmpty()) 2L else 150L
+                ?: if (req.bool("SweepAll")) (confirmedSat - fee).coerceAtLeast(0) else error("amt_sat is required for the requested send")
             val quote = PrepareSendResult(
                 sendIntentId = "intent-${nextId++}",
                 amountSat = amount,
