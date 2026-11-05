@@ -254,7 +254,7 @@ val opened = client.startDescriptorWallet(
 ```kotlin
 import engineering.lightning.wavelength.ListWalletDescriptorsRequest
 
-val public = client.listWalletDescriptors()            // tr(...) and wpkh(...), no private keys
+val public = client.listWalletDescriptors()            // tr(...), plus wpkh(...) if the wallet holds it; no private keys
 ```
 
 A private export takes the wallet's own mnemonic or root descriptors, which the
