@@ -26,6 +26,13 @@ public interface FacadeBindings {
     /** Atomically boots the daemon and imports or unlocks a watch-only wallet. */
     public fun startWatchOnlyWallet(request: ByteArray): ByteArray
 
+    /**
+     * [startWatchOnlyWallet] with the signer in this process: [host] answers
+     * every signature. A binding with no such runtime refuses.
+     */
+    public fun startHostedWatchOnlyWallet(request: ByteArray, host: SignerHost): ByteArray =
+        throw WavelengthException.InvalidConfig("this platform's runtime cannot host a signer")
+
     /** Tears the daemon down. Idempotent. */
     public fun stop()
 

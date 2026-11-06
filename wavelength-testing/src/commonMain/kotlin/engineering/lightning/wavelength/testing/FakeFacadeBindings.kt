@@ -5,6 +5,7 @@ import engineering.lightning.wavelength.FacadeBindings
 import engineering.lightning.wavelength.InvoiceAmount
 import engineering.lightning.wavelength.FacadeSubscription
 import engineering.lightning.wavelength.FacadeVerb
+import engineering.lightning.wavelength.SignerHost
 import engineering.lightning.wavelength.model.ActivityList
 import engineering.lightning.wavelength.model.Balance
 import engineering.lightning.wavelength.model.DescriptorWalletOpenResult
@@ -211,13 +212,23 @@ public class FakeFacadeBindings(
         )
     }
 
-    override fun startWatchOnlyWallet(request: ByteArray): ByteArray = synchronized(lock) {
+    /** The host [startHostedWatchOnlyWallet] was last given. */
+    public var signerHost: SignerHost? = null
+
+    override fun startHostedWatchOnlyWallet(request: ByteArray, host: SignerHost): ByteArray {
+        signerHost = host
+        return openWatchOnly(request, namesSigner = false)
+    }
+
+    override fun startWatchOnlyWallet(request: ByteArray): ByteArray = openWatchOnly(request, namesSigner = true)
+
+    private fun openWatchOnly(request: ByteArray, namesSigner: Boolean): ByteArray = synchronized(lock) {
         val body = request.decodeToString()
         record("startWatchOnlyWallet", body)
         check(!running) { "wavewalletdk mobile already started" }
         val obj = json.parseToJsonElement(body).jsonObject
         val config = obj["config"]!!.jsonObject
-        if (config.string("remote_signer_rpc_host").isNullOrEmpty()) {
+        if (namesSigner && config.string("remote_signer_rpc_host").isNullOrEmpty()) {
             error("config.remote_signer_rpc_host is required for a watch-only wallet")
         }
         val pinned = obj.string("expected_identity_pubkey")

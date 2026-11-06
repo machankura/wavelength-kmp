@@ -3,6 +3,7 @@ package engineering.lightning.wavelength.embedded
 import engineering.lightning.wavelength.FacadeBindings
 import engineering.lightning.wavelength.FacadeSubscription
 import engineering.lightning.wavelength.FacadeVerb
+import engineering.lightning.wavelength.SignerHost
 import engineering.lightning.wavewalletdk.mobile.Mobile
 import engineering.lightning.wavewalletdk.mobile.Subscription
 
@@ -18,6 +19,14 @@ internal object AndroidFacadeBindings : FacadeBindings {
 
     override fun startWatchOnlyWallet(request: ByteArray): ByteArray =
         Mobile.startWatchOnlyWallet(request).orEmpty()
+
+    override fun startHostedWatchOnlyWallet(request: ByteArray, host: SignerHost): ByteArray =
+        Mobile.startWatchOnlyWalletWithHost(
+            request,
+            object : engineering.lightning.wavewalletdk.mobile.SignerHost {
+                override fun handle(request: ByteArray?): ByteArray = host.handle(request ?: ByteArray(0))
+            },
+        ).orEmpty()
 
     override fun stop(): Unit = Mobile.stop()
 

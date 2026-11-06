@@ -123,6 +123,8 @@ public data class RuntimeConfig(
     val bufferSize: Long? = null,
     /** The signer holding the private keys of a watch-only wallet. */
     val remoteSigner: RemoteSignerConfig? = null,
+    /** How long a hosted signer may take over one request, in seconds; null keeps the daemon default. */
+    val hostedSignerRequestTimeoutSeconds: Long? = null,
 ) {
     /**
      * Checks host-owned settings before they reach the daemon.
@@ -205,7 +207,7 @@ public data class RuntimeConfig(
         remoteSignerMacaroonPath = remoteSigner?.macaroonPath,
         remoteSignerTlsCertPath = remoteSigner?.tlsCertPath,
         remoteSignerConnectTimeoutSeconds = remoteSigner?.connectTimeoutSeconds,
-        remoteSignerRequestTimeoutSeconds = remoteSigner?.requestTimeoutSeconds,
+        remoteSignerRequestTimeoutSeconds = remoteSigner?.requestTimeoutSeconds ?: hostedSignerRequestTimeoutSeconds,
     )
 
     private fun <T> T.unlessSwapsDisabled(): T? = if (disableSwaps) null else this

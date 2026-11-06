@@ -183,6 +183,33 @@ public interface DescriptorWalletClient : WavelengthClient {
     ): ListWalletDescriptorsResult
 }
 
+/**
+ * Answers a watch-only daemon's signing requests from this process, rather than
+ * over gRPC from another: see the daemon's `callbacksigner` package, whose
+ * `Request` and `Response` are the JSON here. Called on the daemon's own thread,
+ * so it may block, for as long as [RuntimeConfig.hostedSignerRequestTimeoutSeconds]
+ * allows. Throwing refuses the request.
+ */
+public fun interface SignerHost {
+    public fun handle(request: ByteArray): ByteArray
+}
+
+/** A client that can open a watch-only wallet whose signer is its host. */
+public interface HostedWalletClient : WavelengthClient {
+    /**
+     * Boots the daemon at [RuntimeConfig.dataDir] and imports or unlocks the
+     * wallet in one step, with [host] answering every signature. Opening asks
+     * [host] for none, so a wallet whose signer is a quorum can open without one.
+     *
+     * @throws WavelengthException.RuntimeActive if a daemon is already running.
+     */
+    public suspend fun startHostedWatchOnlyWallet(
+        config: RuntimeConfig,
+        request: WatchOnlyWalletRequest,
+        host: SignerHost,
+    ): WatchOnlyWalletOpenResult
+}
+
 /** A client that can also open a wallet whose fund keys live on a remote signer. */
 public interface WatchOnlyWalletClient : WavelengthClient {
     /**
@@ -205,7 +232,7 @@ public interface WatchOnlyWalletClient : WavelengthClient {
 }
 
 /** A client with every way this SDK has of opening a wallet. */
-public interface EmbeddedWavelengthClient : ExternalSeedWalletClient, DescriptorWalletClient, WatchOnlyWalletClient
+public interface EmbeddedWavelengthClient : ExternalSeedWalletClient, DescriptorWalletClient, WatchOnlyWalletClient, HostedWalletClient
 
 /** The outcome of a dispatched send. */
 public data class SendOutcome(

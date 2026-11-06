@@ -196,6 +196,37 @@ public class FacadeWavelengthClient(
         )
     }
 
+    override suspend fun startHostedWatchOnlyWallet(
+        config: RuntimeConfig,
+        request: WatchOnlyWalletRequest,
+        host: SignerHost,
+    ): WatchOnlyWalletOpenResult {
+        config.validate()
+        request.validate()
+        if (config.dataDir.isNullOrBlank()) {
+            throw WavelengthException.InvalidConfig("startHostedWatchOnlyWallet requires a final nonempty dataDir")
+        }
+        if (config.remoteSigner != null) {
+            throw WavelengthException.InvalidConfig("startHostedWatchOnlyWallet takes a host instead of config.remoteSigner")
+        }
+        val envelope = WatchOnlyWalletStartRequest(
+            config = WireJson.encodeToJsonElement(MobileConfig.serializer(), config.toWire()),
+            bundle = request.bundle,
+            manifest = request.manifest,
+            authKeys = request.authKeys,
+            overrideIdentity = request.overrideIdentity.takeIf { it },
+            walletPassword = ByteString.of(request.walletPassword),
+            birthdayUnix = request.birthday?.epochSeconds,
+            expectedIdentityPubKey = request.expectedIdentityPubKey,
+            recoverState = request.recoverState.takeIf { it },
+            recoveryWindow = request.recoveryWindow,
+        )
+        return startAtomically(
+            encode(WatchOnlyWalletStartRequest.serializer(), envelope),
+            WatchOnlyWalletOpenResult.serializer(),
+        ) { bindings.startHostedWatchOnlyWallet(it, host) }
+    }
+
     /** Runs an atomic wallet start, always zeroing its secret-bearing [request]. */
     private suspend fun <Res> startAtomically(
         request: ByteArray,

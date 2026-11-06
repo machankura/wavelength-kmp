@@ -661,4 +661,23 @@ class FacadeWavelengthClientTest {
         assertFalse(line.contains(Base64.encode("hunter2hunter2".encodeToByteArray())))
         assertTrue(line.contains("<redacted>"))
     }
+
+    @Test
+    fun `a hosted watch-only wallet names no signer, gets its host and sends the timeout`() = runTest {
+        val bindings = FakeFacadeBindings()
+        val client = FacadeWavelengthClient(bindings, Dispatchers.Unconfined)
+        val config = RuntimeConfig(dataDir = "/tmp/h", network = Network.REGTEST, hostedSignerRequestTimeoutSeconds = 90)
+        val host = SignerHost { it }
+        client.startHostedWatchOnlyWallet(config, WatchOnlyWalletRequest("password1".encodeToByteArray(), manifest = "{}", authKeys = "{}"), host)
+
+        assertEquals(host, bindings.signerHost)
+        val sent = bindings.requests.first().second
+        assertTrue(sent.contains("""remote_signer_request_timeout_seconds":90"""), sent)
+        assertFalse(sent.contains("remote_signer_rpc_host"), sent)
+
+        val named = config.copy(remoteSigner = RemoteSignerConfig("h:1", "/m", "/t"))
+        assertFailsWith<WavelengthException.InvalidConfig> {
+            client.startHostedWatchOnlyWallet(named, WatchOnlyWalletRequest("password1".encodeToByteArray(), manifest = "{}", authKeys = "{}"), host)
+        }
+    }
 }
